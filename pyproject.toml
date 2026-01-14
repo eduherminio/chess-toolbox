@@ -1,0 +1,9 @@
+[project]
+name = "chess-toolbox"
+version = "0.1.0"
+description = "Chess tools"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-chess>=1.999",
+]
