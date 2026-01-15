@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8" />
   <title>PGN → Mermaid Diagram (Python + Pyodide + python-chess)</title>
@@ -11,6 +12,11 @@
       max-width: 900px;
       line-height: 1.5;
     }
+
+    .hidden {
+      display: none !important;
+    }
+
     #options {
       margin: 1rem 0;
       display: flex;
@@ -18,14 +24,17 @@
       gap: 1rem;
       align-items: center;
     }
+
     #options label {
       display: flex;
       align-items: center;
       gap: 0.35rem;
     }
+
     #legend {
       margin-top: 2rem;
     }
+
     .loading {
       color: #555;
       font-style: italic;
@@ -37,9 +46,9 @@
   <h1>PGN → Mermaid Diagram</h1>
   <p>Upload a PGN file. Everything runs locally in your browser.</p>
 
-  <input type="file" id="pgn-input" accept=".pgn" />
+  <input type="file" id="pgn-input" accept=".pgn" class="hidden" />
 
-  <div id="options">
+  <div id="options" class="hidden">
     <label>
       <input type="checkbox" id="piece-symbols" checked />
       Show chess piece symbols
@@ -56,7 +65,7 @@
 
   <p id="status" class="loading">Initializing Python and installing python-chess…</p>
 
-  <button id="download-btn" disabled>Download ⭳</button>
+  <button id="download-btn" disabled class="hidden">Download ⭳</button>
 
   <pre id="diagram" class="mermaid"></pre>
 
@@ -71,11 +80,18 @@
     mermaid.initialize({ startOnLoad: false });
 
     let pyodide;
+    const fileInput = document.getElementById("pgn-input");
+    const optionsContainer = document.getElementById("options");
     const pieceSymbolsInput = document.getElementById("piece-symbols");
     const sideSelect = document.getElementById("side-select");
     const downloadBtn = document.getElementById("download-btn");
     let lastDiagramSvg = null;
     let currentDownloadName = "diagram.jpg";
+
+    function showUploadControls() {
+      fileInput.classList.remove("hidden");
+      optionsContainer.classList.remove("hidden");
+    }
 
     async function initPython() {
       pyodide = await loadPyodide({ fullStdLib: false });
@@ -98,27 +114,29 @@
       const treeCode = await fetch("../pgn_tree.py").then(r => r.text());
       await pyodide.FS.writeFile("pgn_tree.py", treeCode);
 
-        // Expose the helper exported by pgn_tree.py
-        pyodide.runPython(`
+      // Expose the helper exported by pgn_tree.py
+      pyodide.runPython(`
       from pgn_tree import generate_mermaid_and_legend
         `);
 
       status.textContent = "Ready. Upload a PGN file.";
+      showUploadControls();
     }
 
     // Run initialization immediately
     initPython();
 
     // File handling
-    document.getElementById("pgn-input").addEventListener("change", async (ev) => {
+    fileInput.addEventListener("change", async (ev) => {
       const file = ev.target.files[0];
       if (!file) return;
 
       const status = document.getElementById("status");
       status.textContent = "Parsing PGN and generating diagram…";
       downloadBtn.disabled = true;
+      downloadBtn.classList.add("hidden");
       currentDownloadName = deriveJpgName(file.name || "diagram.pgn");
-      downloadBtn.textContent = "⭳ Download as .jpg";
+      downloadBtn.textContent = "Download ⭳";
 
       const pgnText = await file.text();
       const pieceSymbols = pieceSymbolsInput.checked;
@@ -133,16 +151,19 @@
       `);
 
       // Render mermaid
-const oldPre = document.getElementById("diagram");
-const newPre = document.createElement("pre");
-newPre.id = "diagram";
-newPre.className = "mermaid";
-const { svg } = await mermaid.render(`diagram_${Date.now()}`, diagram);
-newPre.innerHTML = svg;
-lastDiagramSvg = svg;
+      const oldPre = document.getElementById("diagram");
+      const newPre = document.createElement("pre");
+      newPre.id = "diagram";
+      newPre.className = "mermaid";
+      const { svg } = await mermaid.render(`diagram_${Date.now()}`, diagram);
+      newPre.innerHTML = svg;
+      lastDiagramSvg = svg;
 
-oldPre.replaceWith(newPre);
-      downloadBtn.disabled = !lastDiagramSvg;
+      oldPre.replaceWith(newPre);
+      if (lastDiagramSvg) {
+        downloadBtn.disabled = false;
+        downloadBtn.classList.remove("hidden");
+      }
 
       // Render legend (as HTML)
       const legendDiv = document.getElementById("legend");
@@ -238,4 +259,5 @@ oldPre.replaceWith(newPre);
     }
   </script>
 </body>
+
 </html>
