@@ -64,44 +64,10 @@
       const treeCode = await fetch("pgn_tree.py").then(r => r.text());
       await pyodide.FS.writeFile("pgn_tree.py", treeCode);
 
-      // Define wrapper function
-      pyodide.runPython(`
-import io
-import chess.pgn
-from pgn_tree import (
-    build_tree, collect_branching_stats, decide_side_from_stats,
-    tree_to_diagram, render_mermaid, render_color_legend,
-    requires_startpos_root
-)
-# pgn_tree file defines classes in its own namespace; alias for clarity
-# (Your uploaded file was named pgn_tree.py; here it must be imported as pgn_tree)
-
-def pgn_to_mermaid_and_legend(pgn_text: str) -> tuple[str,str]:
-    game = chess.pgn.read_game(io.StringIO(pgn_text))
-    if game is None:
-        return ("flowchart TD\\nA[Invalid PGN]", "")
-
-    tree = build_tree(game)
-    stats = collect_branching_stats(tree, lambda n: n.children)
-    side = decide_side_from_stats(stats)
-
-    fen_header = game.headers.get("FEN")
-    if fen_header:
-        root_label = f"FEN: {fen_header}"
-        origin_label = fen_header
-    elif requires_startpos_root(tree) or side.value == "black":
-        root_label = "Starting position"
-        origin_label = "starting position"
-    else:
-        root_label = None
-        origin_label = "starting position"
-
-    nodes, edges = tree_to_diagram(tree, side, root_label)
-    diagram = render_mermaid(nodes, edges, side)
-    legend = render_color_legend(side)
-
-    return (diagram, legend)
-      `);
+        // Expose the helper exported by pgn_tree.py
+        pyodide.runPython(`
+      from pgn_tree import generate_mermaid_and_legend
+        `);
 
       status.textContent = "Ready. Upload a PGN file.";
     }
@@ -120,7 +86,7 @@ def pgn_to_mermaid_and_legend(pgn_text: str) -> tuple[str,str]:
       const pgnText = await file.text();
 
       const [diagram, legend] = pyodide.runPython(`
-pgn_to_mermaid_and_legend(${JSON.stringify(pgnText)})
+    generate_mermaid_and_legend(${JSON.stringify(pgnText)})
       `);
 
       // Render mermaid

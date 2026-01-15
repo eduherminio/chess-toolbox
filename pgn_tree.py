@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -14,7 +15,6 @@ from common import (
     RepertoireSide,
     collect_branching_stats,
     decide_side_from_stats,
-    format_sequence,
     format_single_move,
     mermaid_escape,
     requires_startpos_root,
@@ -537,24 +537,24 @@ def render_color_legend(side: RepertoireSide) -> str:
     return "\n".join(lines)
 
 
-def render_table(nodes: Sequence[DiagramNode]) -> str:
-    rows = ["| Node | Sequence |", "| --- | --- |"]
-    for node in nodes:
-        rows.append(f"| {node.id} | {format_sequence(node.sequence)} |")
-    return "\n".join(rows)
+def render_diagram_and_legend(
+    nodes: Sequence[DiagramNode],
+    edges: Sequence[DiagramEdge],
+    side: RepertoireSide,
+) -> tuple[str, str]:
+    diagram = render_mermaid(nodes, edges, side)
+    legend = render_color_legend(side)
+    return diagram, legend
 
 
 def build_markdown(
     title: str,
-    nodes: Sequence[DiagramNode],
-    edges: Sequence[DiagramEdge],
+    diagram: str,
+    legend: str,
     pgn_name: str,
     side: RepertoireSide,
     origin_label: str,
 ) -> str:
-    mermaid = render_mermaid(nodes, edges, side)
-    table = render_table(nodes)
-    legend = render_color_legend(side)
     section_heading = (
         f"## {pgn_name} - {side.value.capitalize()} repertoire from {origin_label}"
     )
@@ -565,37 +565,27 @@ def build_markdown(
         section_heading,
         "",
         "```mermaid",
-        mermaid,
+        diagram,
         "```",
         "",
         legend,
         "",
-        "## Nodes and sequences",
-        table,
-        "",
-        "> Source: scripts/generate_all_variations_onepgn.py",
+        "> Source: eduherminio/chess-toolbox.py",
     ]
     return "\n".join(parts)
 
 
-def process_pgn(
-    path: Path,
+def diagram_artifacts_from_game(
+    game: chess.pgn.Game,
     side_preference: str,
-    output_dir: Path | None,
-    output_name_override: str | None,
-) -> bool:
-    with path.open(encoding="utf-8") as handle:
-        game = chess.pgn.read_game(handle)
-    if game is None:
-        print(f"[WARN] Could not read any game in {path}", file=sys.stderr)
-        return False
-
+) -> tuple[list[DiagramNode], list[DiagramEdge], RepertoireSide, str]:
     tree = build_tree(game)
     if side_preference == "auto":
         stats = collect_branching_stats(tree, lambda node: node.children)
         side = decide_side_from_stats(stats)
     else:
         side = RepertoireSide(side_preference)
+
     fen_header = game.headers.get("FEN")
     if fen_header:
         root_label = f"FEN: {fen_header}"
@@ -606,11 +596,56 @@ def process_pgn(
     else:
         root_label = None
         origin_label = "starting position"
+
     nodes, edges = tree_to_diagram(tree, side, root_label)
+    return nodes, edges, side, origin_label
+
+
+def get_pgn_from_file(path: Path) -> chess.pgn.Game | None:
+    with path.open(encoding="utf-8") as handle:
+        return chess.pgn.read_game(handle)
+
+
+def get_pgn_from_io(pgn_text: str) -> chess.pgn.Game | None:
+    return chess.pgn.read_game(io.StringIO(pgn_text))
+
+
+def parse_pgn(
+    game: chess.pgn.Game | None,
+    side_preference: str = "auto",
+) -> tuple[str, str, RepertoireSide, str]:
+    if game is None:
+        return ("flowchart TD\nA[Invalid PGN]", "", RepertoireSide.WHITE, "invalid PGN")
+    nodes, edges, side, origin_label = diagram_artifacts_from_game(game, side_preference)
+    diagram, legend = render_diagram_and_legend(nodes, edges, side)
+    return diagram, legend, side, origin_label
+
+
+def generate_mermaid_and_legend(
+    pgn_text: str,
+    side_preference: str = "auto",
+) -> tuple[str, str]:
+    game = get_pgn_from_io(pgn_text)
+    diagram, legend, _, _ = parse_pgn(game, side_preference)
+    return diagram, legend
+
+
+def generate_markdown(
+    path: Path,
+    side_preference: str,
+    output_dir: Path | None,
+    output_name_override: str | None,
+) -> bool:
+    game = get_pgn_from_file(path)
+    if game is None:
+        print(f"[WARN] Could not read any game in {path}", file=sys.stderr)
+        return False
+
+    diagram, legend, side, origin_label = parse_pgn(game, side_preference)
     markdown = build_markdown(
         f"Full diagram: {path.stem}",
-        nodes,
-        edges,
+        diagram,
+        legend,
         path.name,
         side,
         origin_label,
@@ -659,7 +694,7 @@ def main() -> int:
 
     ok = True
     for path in pgn_files:
-        ok &= process_pgn(path, args.side, output_dir, output_name_override)
+        ok &= generate_markdown(path, args.side, output_dir, output_name_override)
     return 0 if ok else 1
 
 
