@@ -633,16 +633,6 @@ def parse_pgn(
     return diagram, legend, side, origin_label
 
 
-def generate_mermaid_and_legend(
-    pgn_text: str,
-    side_preference: str = "auto",
-    piece_symbols: bool = False,
-) -> tuple[str, str]:
-    game = get_pgn_from_io(pgn_text)
-    diagram, legend, _, _ = parse_pgn(game, side_preference, piece_symbols=piece_symbols)
-    return diagram, legend
-
-
 def generate_markdown(
     path: Path,
     side_preference: str,

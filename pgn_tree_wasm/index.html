@@ -46,6 +46,8 @@
   <h1>PGN → Mermaid Diagram</h1>
   <p>Upload a PGN file. Everything runs locally in your browser.</p>
 
+  <p id="status" class="loading">Initializing Python and installing python-chess…</p>
+
   <input type="file" id="pgn-input" accept=".pgn" class="hidden" />
 
   <div id="options" class="hidden">
@@ -63,7 +65,7 @@
     </label>
   </div>
 
-  <p id="status" class="loading">Initializing Python and installing python-chess…</p>
+  <h2 id="diagram-title" class="hidden"></h2>
 
   <button id="download-btn" disabled class="hidden">Download ⭳</button>
 
@@ -85,6 +87,7 @@
     const pieceSymbolsInput = document.getElementById("piece-symbols");
     const sideSelect = document.getElementById("side-select");
     const downloadBtn = document.getElementById("download-btn");
+    const diagramTitle = document.getElementById("diagram-title");
     let lastDiagramSvg = null;
     let currentDownloadName = "diagram.jpg";
 
@@ -116,7 +119,7 @@
 
       // Expose the helper exported by pgn_tree.py
       pyodide.runPython(`
-      from pgn_tree import generate_mermaid_and_legend
+      from pgn_tree import parse_pgn, get_pgn_from_io
         `);
 
       status.textContent = "Ready. Upload a PGN file.";
@@ -135,6 +138,8 @@
       status.textContent = "Parsing PGN and generating diagram…";
       downloadBtn.disabled = true;
       downloadBtn.classList.add("hidden");
+      diagramTitle.classList.add("hidden");
+      diagramTitle.textContent = "";
       currentDownloadName = deriveJpgName(file.name || "diagram.pgn");
       downloadBtn.textContent = "Download ⭳";
 
@@ -142,12 +147,14 @@
       const pieceSymbols = pieceSymbolsInput.checked;
       const sidePreference = sideSelect.value;
 
-      const [diagram, legend] = pyodide.runPython(`
-    generate_mermaid_and_legend(
-        ${JSON.stringify(pgnText)},
+      const [diagram, legend, sideValue] = pyodide.runPython(`
+    _game = get_pgn_from_io(${JSON.stringify(pgnText)})
+    _diagram, _legend, _side, _origin = parse_pgn(
+        _game,
         side_preference=${JSON.stringify(sidePreference)},
         piece_symbols=${pieceSymbols ? "True" : "False"}
     )
+    (_diagram, _legend, _side.value)
       `);
 
       // Render mermaid
@@ -163,6 +170,13 @@
       if (lastDiagramSvg) {
         downloadBtn.disabled = false;
         downloadBtn.classList.remove("hidden");
+      }
+
+      if (sideValue) {
+        const prettySide = sideValue.charAt(0).toUpperCase() + sideValue.slice(1);
+        const fileLabel = file.name || "Diagram.pgn";
+        diagramTitle.textContent = `${fileLabel} - ${prettySide} repertoire`;
+        diagramTitle.classList.remove("hidden");
       }
 
       // Render legend (as HTML)
@@ -242,7 +256,7 @@
       // Replace table pipes with <table> (simple case)
       // Minimal parser: treat consecutive table lines as a block
       html = html.replace(
-        /((?:\|.*\|\n)+)/g,
+        /((?:\|.*\|\n?)+)/g,
         (tableBlock) => {
           const rows = tableBlock.trim().split("\n").map(line => {
             const cells = line.split("|").slice(1, -1).map(c => `<td>${c.trim()}</td>`).join("");
