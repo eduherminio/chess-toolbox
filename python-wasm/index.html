@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>PGN → Mermaid Diagram (Python + Pyodide + python-chess)</title>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 2rem auto;
+      max-width: 900px;
+      line-height: 1.5;
+    }
+    #legend {
+      margin-top: 2rem;
+    }
+    .loading {
+      color: #555;
+      font-style: italic;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>PGN → Mermaid Diagram</h1>
+  <p>Upload a PGN file. Everything runs locally in your browser.</p>
+
+  <input type="file" id="pgn-input" accept=".pgn" />
+
+  <p id="status" class="loading">Initializing Python and installing python-chess…</p>
+
+  <pre id="diagram" class="mermaid"></pre>
+
+  <div id="legend"></div>
+
+  <!-- Pyodide -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+
+  <!-- Mermaid -->
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: false });
+
+    let pyodide;
+
+    async function initPython() {
+      pyodide = await loadPyodide({ fullStdLib: false });
+      const status = document.getElementById("status");
+
+      // Install python-chess
+      status.textContent = "Installing python-chess…";
+      await pyodide.loadPackage("micropip");
+      await pyodide.runPythonAsync(`
+        import micropip
+        await micropip.install("chess")
+      `);
+
+      // Load your Python code (common.py + pgn_tree.py)
+      status.textContent = "Loading PGN → Mermaid logic…";
+
+      const commonCode = await fetch("common.py").then(r => r.text());
+      await pyodide.FS.writeFile("common.py", commonCode);
+
+      const treeCode = await fetch("pgn_tree.py").then(r => r.text());
+      await pyodide.FS.writeFile("pgn_tree.py", treeCode);
+
+      // Define wrapper function
+      pyodide.runPython(`
+import io
+import chess.pgn
+from pgn_tree import (
+    build_tree, collect_branching_stats, decide_side_from_stats,
+    tree_to_diagram, render_mermaid, render_color_legend,
+    requires_startpos_root
+)
+# pgn_tree file defines classes in its own namespace; alias for clarity
+# (Your uploaded file was named pgn_tree.py; here it must be imported as pgn_tree)
+
+def pgn_to_mermaid_and_legend(pgn_text: str) -> tuple[str,str]:
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    if game is None:
+        return ("flowchart TD\\nA[Invalid PGN]", "")
+
+    tree = build_tree(game)
+    stats = collect_branching_stats(tree, lambda n: n.children)
+    side = decide_side_from_stats(stats)
+
+    fen_header = game.headers.get("FEN")
+    if fen_header:
+        root_label = f"FEN: {fen_header}"
+        origin_label = fen_header
+    elif requires_startpos_root(tree) or side.value == "black":
+        root_label = "Starting position"
+        origin_label = "starting position"
+    else:
+        root_label = None
+        origin_label = "starting position"
+
+    nodes, edges = tree_to_diagram(tree, side, root_label)
+    diagram = render_mermaid(nodes, edges, side)
+    legend = render_color_legend(side)
+
+    return (diagram, legend)
+      `);
+
+      status.textContent = "Ready. Upload a PGN file.";
+    }
+
+    // Run initialization immediately
+    initPython();
+
+    // File handling
+    document.getElementById("pgn-input").addEventListener("change", async (ev) => {
+      const file = ev.target.files[0];
+      if (!file) return;
+
+      const status = document.getElementById("status");
+      status.textContent = "Parsing PGN and generating diagram…";
+
+      const pgnText = await file.text();
+
+      const [diagram, legend] = pyodide.runPython(`
+pgn_to_mermaid_and_legend(${JSON.stringify(pgnText)})
+      `);
+
+      // Render mermaid
+const oldPre = document.getElementById("diagram");
+const newPre = document.createElement("pre");
+newPre.id = "diagram";
+newPre.className = "mermaid";
+newPre.textContent = diagram;
+
+oldPre.replaceWith(newPre);
+      await mermaid.run({ nodes: [newPre] });
+
+      // Render legend (as HTML)
+      const legendDiv = document.getElementById("legend");
+      legendDiv.innerHTML = markedDownToHtml(legend);
+
+      status.textContent = "Done.";
+    });
+
+    // Very tiny markdown-to-HTML helper (only headings + tables + paragraphs)
+    function markedDownToHtml(md) {
+      // Replace headings
+      let html = md
+        .replace(/^## (.*)$/gm, "<h2>$1</h2>")
+        .replace(/^# (.*)$/gm, "<h1>$1</h1>");
+
+      // Replace table pipes with <table> (simple case)
+      // Minimal parser: treat consecutive table lines as a block
+      html = html.replace(
+        /((?:\|.*\|\n)+)/g,
+        (tableBlock) => {
+          const rows = tableBlock.trim().split("\n").map(line => {
+            const cells = line.split("|").slice(1, -1).map(c => `<td>${c.trim()}</td>`).join("");
+            return `<tr>${cells}</tr>`;
+          });
+          return `<table>${rows.join("")}</table>`;
+        }
+      );
+
+      // Paragraphs
+      html = html.replace(/(^|\n)([^<\n][^\n]*)/g, "<p>$2</p>");
+
+      return html;
+    }
+  </script>
+</body>
+</html>
