@@ -56,6 +56,8 @@
 
   <p id="status" class="loading">Initializing Python and installing python-chess…</p>
 
+  <button id="download-btn" disabled>Download ⭳</button>
+
   <pre id="diagram" class="mermaid"></pre>
 
   <div id="legend"></div>
@@ -71,6 +73,9 @@
     let pyodide;
     const pieceSymbolsInput = document.getElementById("piece-symbols");
     const sideSelect = document.getElementById("side-select");
+    const downloadBtn = document.getElementById("download-btn");
+    let lastDiagramSvg = null;
+    let currentDownloadName = "diagram.jpg";
 
     async function initPython() {
       pyodide = await loadPyodide({ fullStdLib: false });
@@ -111,6 +116,9 @@
 
       const status = document.getElementById("status");
       status.textContent = "Parsing PGN and generating diagram…";
+      downloadBtn.disabled = true;
+      currentDownloadName = deriveJpgName(file.name || "diagram.pgn");
+      downloadBtn.textContent = "⭳ Download as .jpg";
 
       const pgnText = await file.text();
       const pieceSymbols = pieceSymbolsInput.checked;
@@ -129,10 +137,12 @@ const oldPre = document.getElementById("diagram");
 const newPre = document.createElement("pre");
 newPre.id = "diagram";
 newPre.className = "mermaid";
-newPre.textContent = diagram;
+const { svg } = await mermaid.render(`diagram_${Date.now()}`, diagram);
+newPre.innerHTML = svg;
+lastDiagramSvg = svg;
 
 oldPre.replaceWith(newPre);
-      await mermaid.run({ nodes: [newPre] });
+      downloadBtn.disabled = !lastDiagramSvg;
 
       // Render legend (as HTML)
       const legendDiv = document.getElementById("legend");
@@ -140,6 +150,66 @@ oldPre.replaceWith(newPre);
 
       status.textContent = "Done.";
     });
+
+    downloadBtn.addEventListener("click", async () => {
+      if (!lastDiagramSvg) {
+        return;
+      }
+      const blob = await svgToJpeg(lastDiagramSvg, 3);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = currentDownloadName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+
+    async function svgToJpeg(svgText, scale = 1) {
+      const viewBoxMatch = svgText.match(/viewBox="([\d.\s-]+)"/);
+      const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
+      return new Promise((resolve, reject) => {
+        const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.onload = () => {
+          const baseWidth = viewBox ? viewBox[2] : img.width;
+          const baseHeight = viewBox ? viewBox[3] : img.height;
+          const canvas = document.createElement("canvas");
+          canvas.width = baseWidth * scale;
+          canvas.height = baseHeight * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Could not convert canvas to blob"));
+            }
+            URL.revokeObjectURL(url);
+          }, "image/jpeg", 0.95);
+        };
+        img.onerror = (err) => {
+          URL.revokeObjectURL(url);
+          reject(err);
+        };
+        img.src = url;
+      });
+    }
+
+    function deriveJpgName(originalName) {
+      if (!originalName) {
+        return "diagram.jpg";
+      }
+      const lastDot = originalName.lastIndexOf(".");
+      const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
+      const safeBase = base.trim() || "diagram";
+      return `${safeBase}.jpg`;
+    }
 
     // Very tiny markdown-to-HTML helper (only headings + tables + paragraphs)
     function markedDownToHtml(md) {
