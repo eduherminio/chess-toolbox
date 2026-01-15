@@ -31,6 +31,11 @@
       gap: 0.35rem;
     }
 
+    #diagram-title {
+      text-align: center;
+      margin-top: 1rem;
+    }
+
     #legend {
       margin-top: 2rem;
     }
@@ -39,11 +44,25 @@
       color: #555;
       font-style: italic;
     }
+
+    footer {
+      margin-top: 3rem;
+      font-size: 0.9rem;
+      color: #4b5563;
+      text-align: right;
+    }
+
+    footer a {
+      color: inherit;
+      text-decoration: underline;
+    }
   </style>
 </head>
 
 <body>
-  <h1>PGN → Mermaid Diagram</h1>
+  <div style="text-align: center;">
+    <h1>PGN → Mermaid Diagram</h1>
+  </div>
   <p>Upload a PGN file. Everything runs locally in your browser.</p>
 
   <p id="status" class="loading">Initializing Python and installing python-chess…</p>
@@ -72,6 +91,11 @@
   <pre id="diagram" class="mermaid"></pre>
 
   <div id="legend"></div>
+
+  <footer>
+    Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
+      rel="noopener noreferrer">eduherminio/chess-toolbox</a>
+  </footer>
 
   <!-- Pyodide -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
