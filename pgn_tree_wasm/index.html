@@ -11,6 +11,18 @@
       max-width: 900px;
       line-height: 1.5;
     }
+    #options {
+      margin: 1rem 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+    }
+    #options label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
     #legend {
       margin-top: 2rem;
     }
@@ -27,6 +39,21 @@
 
   <input type="file" id="pgn-input" accept=".pgn" />
 
+  <div id="options">
+    <label>
+      <input type="checkbox" id="piece-symbols" checked />
+      Show chess piece symbols
+    </label>
+    <label>
+      Repertoire side
+      <select id="side-select">
+        <option value="auto" selected>Auto (detect)</option>
+        <option value="white">White</option>
+        <option value="black">Black</option>
+      </select>
+    </label>
+  </div>
+
   <p id="status" class="loading">Initializing Python and installing python-chess…</p>
 
   <pre id="diagram" class="mermaid"></pre>
@@ -42,6 +69,8 @@
     mermaid.initialize({ startOnLoad: false });
 
     let pyodide;
+    const pieceSymbolsInput = document.getElementById("piece-symbols");
+    const sideSelect = document.getElementById("side-select");
 
     async function initPython() {
       pyodide = await loadPyodide({ fullStdLib: false });
@@ -84,9 +113,15 @@
       status.textContent = "Parsing PGN and generating diagram…";
 
       const pgnText = await file.text();
+      const pieceSymbols = pieceSymbolsInput.checked;
+      const sidePreference = sideSelect.value;
 
       const [diagram, legend] = pyodide.runPython(`
-    generate_mermaid_and_legend(${JSON.stringify(pgnText)})
+    generate_mermaid_and_legend(
+        ${JSON.stringify(pgnText)},
+        side_preference=${JSON.stringify(sidePreference)},
+        piece_symbols=${pieceSymbols ? "True" : "False"}
+    )
       `);
 
       // Render mermaid

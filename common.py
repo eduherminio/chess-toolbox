@@ -8,6 +8,16 @@ from typing import Any, Callable, Iterable, Sequence
 
 AUTO_SIDE_SAMPLE_MAX_PLY = 40
 
+PIECE_SYMBOLS = str.maketrans(
+    {
+        "K": "♔",
+        "Q": "♕",
+        "R": "♖",
+        "B": "♗",
+        "N": "♘",
+    }
+)
+
 
 class RepertoireSide(Enum):
     WHITE = "white"
@@ -53,13 +63,19 @@ def decide_side_from_stats(stats: dict[int, BranchingStats]) -> RepertoireSide:
         return RepertoireSide.WHITE
     return RepertoireSide.WHITE
 
-def format_single_move(ply: int, move: str, use_black_ellipsis: bool = True) -> str:
+def format_single_move(
+    ply: int,
+    move: str,
+    use_black_ellipsis: bool = True,
+    use_piece_symbols: bool = False,
+) -> str:
     number = (ply + 1) // 2
     if ply % 2 == 1:
         prefix = f"{number}."
     else:
         prefix = f"{number}..." if use_black_ellipsis else f"{number}."
-    return f"{prefix} {move}"
+    rendered_move = move.translate(PIECE_SYMBOLS) if use_piece_symbols else move
+    return f"{prefix} {rendered_move}"
 
 
 def format_sequence(sequence: Sequence[str]) -> str:

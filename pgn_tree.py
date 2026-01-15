@@ -181,6 +181,11 @@ def parse_args() -> argparse.Namespace:
         help="Orientation for the repertoire. Auto mode infers the side from branching heuristics.",
     )
     parser.add_argument(
+        "--piece-symbols",
+        action="store_true",
+        help="Render moves with Unicode chess piece symbols instead of SAN letters.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -192,10 +197,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def node_label_text(node: TreeNode, root_label: str | None) -> str:
+def node_label_text(node: TreeNode, root_label: str | None, piece_symbols: bool) -> str:
     if node.ply == 0:
         return root_label or "Initial position"
-    return format_single_move(node.ply, node.san or "")
+    return format_single_move(node.ply, node.san or "", use_piece_symbols=piece_symbols)
 
 
 def canonical_fen(board: chess.Board) -> str:
@@ -273,6 +278,7 @@ def tree_to_diagram(
     root: TreeNode,
     side: RepertoireSide,
     root_label: str | None = None,
+    piece_symbols: bool = False,
 ) -> tuple[list[DiagramNode], list[DiagramEdge]]:
     annotate_longest_paths(root)
     canonical = select_canonical_nodes(root)
@@ -297,7 +303,7 @@ def tree_to_diagram(
             return None
         node_id = f"N{len(fen_to_id)}"
         fen_to_id[fen] = node_id
-        label = node_label_text(node, root_label)
+        label = node_label_text(node, root_label, piece_symbols=piece_symbols)
         glyphs = interpret_glyphs(node.nags)
         nodes.append(DiagramNode(id=node_id, label=label, sequence=node.sequence, glyphs=glyphs))
         return node_id
@@ -312,7 +318,7 @@ def tree_to_diagram(
             opponent_children = adjacency.get(opponent_fen, OrderedDict())
             if not opponent_children:
                 continue
-            edge_label = format_single_move(opponent_node.ply, move_san)
+            edge_label = format_single_move(opponent_node.ply, move_san, use_piece_symbols=piece_symbols)
             edge_quality = classify_move_quality(opponent_node.nags)
             for _reply_san, reply_fen in opponent_children.items():
                 target_id = ensure_node(reply_fen)
@@ -578,6 +584,7 @@ def build_markdown(
 def diagram_artifacts_from_game(
     game: chess.pgn.Game,
     side_preference: str,
+    piece_symbols: bool = False,
 ) -> tuple[list[DiagramNode], list[DiagramEdge], RepertoireSide, str]:
     tree = build_tree(game)
     if side_preference == "auto":
@@ -597,7 +604,7 @@ def diagram_artifacts_from_game(
         root_label = None
         origin_label = "starting position"
 
-    nodes, edges = tree_to_diagram(tree, side, root_label)
+    nodes, edges = tree_to_diagram(tree, side, root_label, piece_symbols=piece_symbols)
     return nodes, edges, side, origin_label
 
 
@@ -613,10 +620,15 @@ def get_pgn_from_io(pgn_text: str) -> chess.pgn.Game | None:
 def parse_pgn(
     game: chess.pgn.Game | None,
     side_preference: str = "auto",
+    piece_symbols: bool = False,
 ) -> tuple[str, str, RepertoireSide, str]:
     if game is None:
         return ("flowchart TD\nA[Invalid PGN]", "", RepertoireSide.WHITE, "invalid PGN")
-    nodes, edges, side, origin_label = diagram_artifacts_from_game(game, side_preference)
+    nodes, edges, side, origin_label = diagram_artifacts_from_game(
+        game,
+        side_preference,
+        piece_symbols=piece_symbols,
+    )
     diagram, legend = render_diagram_and_legend(nodes, edges, side)
     return diagram, legend, side, origin_label
 
@@ -624,9 +636,10 @@ def parse_pgn(
 def generate_mermaid_and_legend(
     pgn_text: str,
     side_preference: str = "auto",
+    piece_symbols: bool = False,
 ) -> tuple[str, str]:
     game = get_pgn_from_io(pgn_text)
-    diagram, legend, _, _ = parse_pgn(game, side_preference)
+    diagram, legend, _, _ = parse_pgn(game, side_preference, piece_symbols=piece_symbols)
     return diagram, legend
 
 
@@ -635,13 +648,18 @@ def generate_markdown(
     side_preference: str,
     output_dir: Path | None,
     output_name_override: str | None,
+    piece_symbols: bool = False,
 ) -> bool:
     game = get_pgn_from_file(path)
     if game is None:
         print(f"[WARN] Could not read any game in {path}", file=sys.stderr)
         return False
 
-    diagram, legend, side, origin_label = parse_pgn(game, side_preference)
+    diagram, legend, side, origin_label = parse_pgn(
+        game,
+        side_preference,
+        piece_symbols=piece_symbols,
+    )
     markdown = build_markdown(
         f"Full diagram: {path.stem}",
         diagram,
@@ -694,7 +712,13 @@ def main() -> int:
 
     ok = True
     for path in pgn_files:
-        ok &= generate_markdown(path, args.side, output_dir, output_name_override)
+        ok &= generate_markdown(
+            path,
+            args.side,
+            output_dir,
+            output_name_override,
+            piece_symbols=args.piece_symbols,
+        )
     return 0 if ok else 1
 
 
