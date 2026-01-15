@@ -248,10 +248,16 @@
 
     // Very tiny markdown-to-HTML helper (only headings + tables + paragraphs)
     function markedDownToHtml(md) {
+      // Remove table headers we do not need
+      md = md
+        .replace(/\|\s*Color\s*\|\s*Meaning\s*\|\s*\n?/gi, "")
+        .replace(/\|\s*-+\s*\|\s*-+\s*\|\s*\n?/g, "");
+
       // Replace headings
       let html = md
         .replace(/^## (.*)$/gm, "<h2>$1</h2>")
-        .replace(/^# (.*)$/gm, "<h1>$1</h1>");
+        .replace(/^# (.*)$/gm, "<h1>$1</h1>")
+        .replace(/^\*\*(.+?)\*\*$/gm, "<h3>$1</h3>");
 
       // Replace table pipes with <table> (simple case)
       // Minimal parser: treat consecutive table lines as a block
