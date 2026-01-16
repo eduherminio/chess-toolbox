@@ -34,12 +34,12 @@ jobs:
           mkdir -p "$SITE_DIR"
 
           # Python scripts
-          rsync -a --delete --exclude '.DS_Store' scripts/ "$SITE_DIR/scripts/"
+          rsync -a --delete scripts/ "$SITE_DIR/scripts/"
 
           # Web files
           cp index.html "$SITE_DIR/"
-          rsync -a --delete --exclude '.DS_Store' pgn_tree/ "$SITE_DIR/pgn_tree/"
-          rsync -a --delete --exclude '.DS_Store' repertoire_overview/ "$SITE_DIR/repertoire_overview/"
+          rsync -a --delete pgn-tree "$SITE_DIR/"
+          rsync -a --delete repertoire-overview "$SITE_DIR/"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
