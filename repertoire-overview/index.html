@@ -207,7 +207,7 @@
 			const pgnFiles = files.filter((file) => file.name.toLowerCase().endsWith(".pgn"));
 
 			if (!pgnFiles.length) {
-				statusEl.textContent = "Select a folder that contains at least one .pgn file.";
+				statusEl.textContent = "Select a folder that contains at least one .pgn file. If you're using Firefox, please try another browser";
 				folderInput.value = "";
 				return;
 			}
