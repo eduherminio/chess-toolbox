@@ -1,20 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="light">
 
 <head>
   <meta charset="utf-8" />
   <title>PGN → Mermaid Diagram (Python + Pyodide + python-chess)</title>
 
   <style>
+    :root {
+      --bg-color: #f8fafc;
+      --canvas-bg: #ffffff;
+      --text-color: #0f172a;
+      /* --panel-bg: #ffffff; */
+      --muted-color: #475569;
+      /* --border-color: #cbd5f5; */
+    }
+
+    [data-theme="dark"] {
+      --bg-color: #0f172a;
+      --canvas-bg: #0f172a;
+      --text-color: #e2e8f0;
+      /* --panel-bg: #1e293b; */
+      --muted-color: #94a3b8;
+      /* --border-color: #334155; */
+    }
+
     body {
       font-family: sans-serif;
       margin: 2rem auto;
       max-width: 900px;
       line-height: 1.5;
+      background-color: var(--bg-color);
+      color: var(--text-color);
     }
 
     .hidden {
       display: none !important;
+    }
+
+    .page-title {
+      text-align: center;
     }
 
     #options {
@@ -25,7 +49,8 @@
       align-items: center;
     }
 
-    #options label {
+    #options label,
+    .theme-toggle {
       display: flex;
       align-items: center;
       gap: 0.35rem;
@@ -41,15 +66,19 @@
     }
 
     .loading {
-      color: #555;
+      color: var(--muted-color);
       font-style: italic;
     }
 
     footer {
       margin-top: 3rem;
       font-size: 0.9rem;
-      color: #4b5563;
-      text-align: right;
+      color: var(--muted-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
     }
 
     footer a {
@@ -60,7 +89,7 @@
 </head>
 
 <body>
-  <div style="text-align: center;">
+  <div class="page-title">
     <h1>PGN → Mermaid Diagram</h1>
   </div>
   <p>Upload a PGN file. Everything runs locally in your browser.</p>
@@ -93,8 +122,14 @@
   <div id="legend"></div>
 
   <footer>
-    Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
-      rel="noopener noreferrer">eduherminio/chess-toolbox</a>
+    <label class="theme-toggle">
+      <input type="checkbox" id="dark-theme" />
+      Dark theme
+    </label>
+    <span>
+      Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
+        rel="noopener noreferrer">eduherminio/chess-toolbox</a>
+    </span>
   </footer>
 
   <!-- Pyodide -->
@@ -103,22 +138,61 @@
   <!-- Mermaid -->
   <script type="module">
     import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({ startOnLoad: false });
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
 
     let pyodide;
     const fileInput = document.getElementById("pgn-input");
     const optionsContainer = document.getElementById("options");
     const pieceSymbolsInput = document.getElementById("piece-symbols");
     const sideSelect = document.getElementById("side-select");
+    const themeToggle = document.getElementById("dark-theme");
     const downloadBtn = document.getElementById("download-btn");
     const diagramTitle = document.getElementById("diagram-title");
+    const THEME_STORAGE_KEY = "chess-toolbox-theme";
     let lastDiagramSvg = null;
     let currentDownloadName = "diagram.jpg";
+    let lastDiagramDefinition = "";
+
+    function applyTheme(theme, { persist = true } = {}) {
+      const normalized = theme === "dark" ? "dark" : "light";
+      document.documentElement.dataset.theme = normalized;
+      if (persist) {
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, normalized);
+        } catch (err) {
+          console.warn("Unable to persist theme", err);
+        }
+      }
+      if (themeToggle) {
+        themeToggle.checked = normalized === "dark";
+      }
+      void rerenderDiagramForTheme();
+    }
+
+    function initTheme() {
+      let storedTheme = null;
+      try {
+        storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+      } catch (err) {
+        console.warn("Unable to read theme preference", err);
+      }
+      const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const initialTheme = storedTheme || (prefersDark ? "dark" : "light");
+      applyTheme(initialTheme, { persist: false });
+      if (themeToggle) {
+        themeToggle.checked = initialTheme === "dark";
+        themeToggle.addEventListener("change", () => {
+          applyTheme(themeToggle.checked ? "dark" : "light");
+        });
+      }
+    }
 
     function showUploadControls() {
       fileInput.classList.remove("hidden");
       optionsContainer.classList.remove("hidden");
     }
+
+    initTheme();
 
     async function initPython() {
       pyodide = await loadPyodide({ fullStdLib: false });
@@ -182,15 +256,7 @@
       `);
 
       // Render mermaid
-      const oldPre = document.getElementById("diagram");
-      const newPre = document.createElement("pre");
-      newPre.id = "diagram";
-      newPre.className = "mermaid";
-      const { svg } = await mermaid.render(`diagram_${Date.now()}`, diagram);
-      newPre.innerHTML = svg;
-      lastDiagramSvg = svg;
-
-      oldPre.replaceWith(newPre);
+      await renderDiagram(diagram);
       if (lastDiagramSvg) {
         downloadBtn.disabled = false;
         downloadBtn.classList.remove("hidden");
@@ -239,7 +305,7 @@
           canvas.width = baseWidth * scale;
           canvas.height = baseHeight * scale;
           const ctx = canvas.getContext("2d");
-          ctx.fillStyle = "#ffffff";
+          ctx.fillStyle = getCanvasBackgroundColor();
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.scale(scale, scale);
           ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
@@ -268,6 +334,38 @@
       const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
       const safeBase = base.trim() || "diagram";
       return `${safeBase}.jpg`;
+    }
+
+    function getCanvasBackgroundColor() {
+      const styles = getComputedStyle(document.documentElement);
+      const value = styles.getPropertyValue("--canvas-bg").trim();
+      return value || "#ffffff";
+    }
+
+    function getMermaidTheme() {
+      return document.documentElement.dataset.theme === "dark" ? "dark" : "neutral";
+    }
+
+    async function renderDiagram(definition) {
+      if (!definition) {
+        return;
+      }
+      lastDiagramDefinition = definition;
+      const oldPre = document.getElementById("diagram");
+      const newPre = document.createElement("pre");
+      newPre.id = "diagram";
+      newPre.className = "mermaid";
+      const { svg } = await mermaid.render(`diagram_${Date.now()}`, definition, undefined, { theme: getMermaidTheme() });
+      newPre.innerHTML = svg;
+      lastDiagramSvg = svg;
+      oldPre.replaceWith(newPre);
+    }
+
+    async function rerenderDiagramForTheme() {
+      if (!lastDiagramDefinition) {
+        return;
+      }
+      await renderDiagram(lastDiagramDefinition);
     }
 
     // Very tiny markdown-to-HTML helper (only headings + tables + paragraphs)
