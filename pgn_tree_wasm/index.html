@@ -41,6 +41,12 @@
       text-align: center;
     }
 
+    .options-heading {
+      margin: 1.5rem 0 0.25rem;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
     #options {
       margin: 1rem 0;
       display: flex;
@@ -68,6 +74,7 @@
     .loading {
       color: var(--muted-color);
       font-style: italic;
+      text-align: center;
     }
 
     footer {
@@ -92,11 +99,14 @@
   <div class="page-title">
     <h1>PGN → Mermaid Diagram</h1>
   </div>
-  <p>Upload a PGN file. Everything runs locally in your browser.</p>
 
   <p id="status" class="loading">Initializing Python and installing python-chess…</p>
 
-  <input type="file" id="pgn-input" accept=".pgn" class="hidden" />
+  <div style="text-align: center;">
+    <input type="file" id="pgn-input" accept=".pgn" class="hidden" />
+  </div>
+
+  <p id="options-heading" class="options-heading hidden">Diagram options</p>
 
   <div id="options" class="hidden">
     <label>
@@ -112,6 +122,7 @@
       </select>
     </label>
   </div>
+  <br />
 
   <h2 id="diagram-title" class="hidden"></h2>
 
@@ -143,6 +154,7 @@
     let pyodide;
     const fileInput = document.getElementById("pgn-input");
     const optionsContainer = document.getElementById("options");
+    const optionsHeading = document.getElementById("options-heading");
     const pieceSymbolsInput = document.getElementById("piece-symbols");
     const sideSelect = document.getElementById("side-select");
     const themeToggle = document.getElementById("dark-theme");
@@ -190,6 +202,9 @@
     function showUploadControls() {
       fileInput.classList.remove("hidden");
       optionsContainer.classList.remove("hidden");
+      if (optionsHeading) {
+        optionsHeading.classList.remove("hidden");
+      }
     }
 
     initTheme();
@@ -220,7 +235,7 @@
       from pgn_tree import parse_pgn, get_pgn_from_io
         `);
 
-      status.textContent = "Ready. Upload a PGN file.";
+      status.textContent = "Ready, select a PGN file with your repertoire. Everything runs locally in your browser.";
       showUploadControls();
     }
 
