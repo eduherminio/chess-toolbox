@@ -33,13 +33,13 @@ jobs:
           SITE_DIR="site"
           mkdir -p "$SITE_DIR"
 
-          # Root-level assets that Pyodide pages import
-          cp common.py "$SITE_DIR/"
-          cp pgn_tree.py "$SITE_DIR/"
-          cp repertoire_overview.py "$SITE_DIR/"
+          # Python scripts
+          rsync -a --delete --exclude '.DS_Store' scripts/ "$SITE_DIR/scripts/"
 
           # Web files
-          rsync -a --delete --exclude '.DS_Store' wasm/ "$SITE_DIR/"
+          cp index.html "$SITE_DIR/"
+          rsync -a --delete --exclude '.DS_Store' pgn_tree/ "$SITE_DIR/pgn_tree/"
+          rsync -a --delete --exclude '.DS_Store' repertoire_overview/ "$SITE_DIR/repertoire_overview/"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

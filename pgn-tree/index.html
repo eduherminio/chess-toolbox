@@ -247,10 +247,10 @@
       // Load your Python code (common.py + pgn_tree.py)
       status.textContent = "Loading PGN → Mermaid logic…";
 
-      const commonCode = await fetch("../../common.py").then(r => r.text());
+      const commonCode = await fetch("../scripts/common.py").then(r => r.text());
       await pyodide.FS.writeFile("common.py", commonCode);
 
-      const treeCode = await fetch("../../pgn_tree.py").then(r => r.text());
+      const treeCode = await fetch("../scripts/pgn_tree.py").then(r => r.text());
       await pyodide.FS.writeFile("pgn_tree.py", treeCode);
 
       // Expose the helper exported by pgn_tree.py
