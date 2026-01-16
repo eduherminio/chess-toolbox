@@ -576,7 +576,7 @@ def build_markdown(
         "",
         legend,
         "",
-        "> Source: eduherminio/chess-toolbox.py",
+        "> Source: eduherminio/chess-toolbox",
     ]
     return "\n".join(parts)
 

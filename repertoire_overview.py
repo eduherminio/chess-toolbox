@@ -369,7 +369,7 @@ def build_markdown(
             render_table(section.nodes, use_piece_symbols=use_piece_symbols),
             "",
         ])
-    parts.append("> Source: scripts/generate_main_variations_multipgn.py")
+    parts.append("> Source: eduherminio/chess-toolbox")
     return "\n".join(parts)
 
 def main(argv: Sequence[str] | None = None) -> int:
