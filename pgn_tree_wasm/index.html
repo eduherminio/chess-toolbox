@@ -82,9 +82,8 @@
       font-size: 0.9rem;
       color: var(--muted-color);
       display: flex;
-      justify-content: space-between;
-      align-items: center;
       flex-wrap: wrap;
+      justify-content: space-between;
       gap: 0.75rem;
     }
 
@@ -92,12 +91,27 @@
       color: inherit;
       text-decoration: underline;
     }
+
+    footer .powered-by {
+      flex-basis: 100%;
+      text-align: right;
+      margin-bottom: 0.5rem;
+    }
+
+    footer .footnote {
+      font-style: italic;
+      flex-basis: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
   </style>
 </head>
 
 <body>
   <div class="page-title">
-    <h1>PGN → Mermaid Diagram</h1>
+    <h1>PGN tree visualizer</h1>
   </div>
 
   <p id="status" class="loading">Initializing Python and installing python-chess…</p>
@@ -133,11 +147,14 @@
   <div id="legend"></div>
 
   <footer>
-    <label class="theme-toggle">
-      <input type="checkbox" id="dark-theme" />
-      Dark theme
-    </label>
-    <span>
+    <span class="footnote">
+      <label class="theme-toggle">
+        <input type="checkbox" id="dark-theme" />
+        Dark theme
+      </label>
+      This tool runs locally in your browser. It's free and anonymous, your PGNs aren't sent anywhere.
+    </span>
+    <span class="powered-by">
       Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
         rel="noopener noreferrer">eduherminio/chess-toolbox</a>
     </span>
@@ -235,7 +252,7 @@
       from pgn_tree import parse_pgn, get_pgn_from_io
         `);
 
-      status.textContent = "Ready, select a PGN file with your repertoire. Everything runs locally in your browser.";
+      status.textContent = "Ready. Select a PGN file from your repertoire.";
       showUploadControls();
     }
 
