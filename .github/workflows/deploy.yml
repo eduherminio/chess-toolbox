@@ -36,9 +36,11 @@ jobs:
           # Root-level assets that Pyodide pages import
           cp common.py "$SITE_DIR/"
           cp pgn_tree.py "$SITE_DIR/"
+          cp repertoire_overview.py "$SITE_DIR/"
 
           # Web files
           rsync -a --delete --exclude '.DS_Store' pgn_tree_wasm/ "$SITE_DIR/pgn-tree/"
+          rsync -a --delete --exclude '.DS_Store' repertoire_overview_wasm/ "$SITE_DIR/repertoire-overview/"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

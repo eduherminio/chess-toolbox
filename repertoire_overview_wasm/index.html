@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html data-theme="light">
+
+<head>
+	<meta charset="utf-8" />
+	<title>Repertoire visualizer</title>
+
+	<style>
+		:root {
+			--bg-color: #f8fafc;
+			--canvas-bg: #ffffff;
+			--text-color: #0f172a;
+			--muted-color: #475569;
+			/* --panel-bg: #ffffff; */
+			/* --panel-border: #cbd5f5; */
+		}
+
+		[data-theme="dark"] {
+			--bg-color: #0f172a;
+			--canvas-bg: #0f172a;
+			--text-color: #e2e8f0;
+			--muted-color: #94a3b8;
+			/* --panel-bg: #0f172a; */
+			/* --panel-border: #334155; */
+		}
+
+		body {
+			font-family: sans-serif;
+			margin: 2rem auto;
+			max-width: 900px;
+			line-height: 1.5;
+			background-color: var(--bg-color);
+			color: var(--text-color);
+		}
+
+		.hidden {
+			display: none !important;
+		}
+
+		.page-title {
+			text-align: center;
+		}
+
+		.options-heading {
+			margin: 1.5rem 0 0.25rem;
+			font-weight: 600;
+			color: var(--text-color);
+		}
+
+		#options {
+			margin: 1rem 0;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 1rem;
+			align-items: center;
+		}
+
+		#options label,
+		.theme-toggle {
+			display: flex;
+			align-items: center;
+			gap: 0.35rem;
+		}
+
+		#diagram-title {
+			text-align: center;
+			margin-top: 1rem;
+		}
+
+		.loading {
+			color: var(--muted-color);
+			font-style: italic;
+			text-align: center;
+		}
+
+		#selected-folder {
+			text-align: center;
+			color: var(--muted-color);
+			font-size: 0.95rem;
+		}
+
+		.diagram-section {
+			/* background: var(--panel-bg); */
+			/* border: 1px solid var(--panel-border); */
+			/* border-radius: 8px; */
+			padding: 1.25rem;
+			margin-top: 2rem;
+		}
+
+		.diagram-section h3 {
+			margin-top: 0;
+		}
+
+		.diagram-section table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-top: 1rem;
+			font-size: 0.95rem;
+		}
+
+		.diagram-section table td,
+		.diagram-section table th {
+			border: 1px solid var(--panel-border);
+			padding: 0.35rem 0.45rem;
+			text-align: left;
+		}
+
+		footer {
+			margin-top: 3rem;
+			font-size: 0.9rem;
+			color: var(--text-color);
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: space-between;
+			gap: 0.75rem;
+		}
+
+		footer a {
+			color: inherit;
+			text-decoration: underline;
+		}
+
+		footer .powered-by {
+			color: var(--muted-color);
+			flex-basis: 100%;
+			text-align: right;
+			margin-bottom: 0.5rem;
+		}
+
+		footer .footnote {
+			flex-basis: 100%;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 1rem;
+		}
+
+		footer .footnote-text {
+			font-style: italic;
+			text-align: right;
+		}
+
+		.folder-button {
+			margin-top: 0.5rem;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="page-title">
+		<h1>Repertoire visualizer</h1>
+	</div>
+
+	<p id="status" class="loading">Initializing Python and installing python-chess…</p>
+
+	<div style="text-align: center;">
+		<input type="file" id="pgn-folder" accept=".pgn" webkitdirectory multiple class="hidden" />
+		<button id="folder-picker" class="hidden folder-button">Choose PGN folder</button>
+	</div>
+
+	<p id="selected-folder" class="hidden">No folder selected yet.</p>
+
+	<p id="options-heading" class="options-heading hidden">Diagram options</p>
+
+	<div id="options" class="hidden">
+		<label>
+			Repertoire side
+			<select id="side-select">
+				<option value="auto" selected>Auto (detect)</option>
+				<option value="white">White</option>
+				<option value="black">Black</option>
+			</select>
+		</label>
+		<label>
+			Max ply depth
+			<input type="number" id="max-ply" min="0" value="4" />
+		</label>
+	</div>
+
+	<h2 id="diagram-title" class="hidden"></h2>
+
+	<button id="download-btn" disabled class="hidden">Download overview ⭳</button>
+
+	<div id="sections-container"></div>
+
+	<div id="legend"></div>
+
+	<footer>
+		<span class="footnote">
+			<label class="theme-toggle">
+				<input type="checkbox" id="dark-theme" />
+				Dark theme
+			</label>
+			<span class="footnote-text">This tool runs locally in your browser. It's free and anonymous, your PGNs aren't sent anywhere.</span>
+		</span>
+		<span class="powered-by">
+			Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
+				rel="noopener noreferrer">eduherminio/chess-toolbox</a>
+		</span>
+	</footer>
+
+	<!-- Pyodide -->
+	<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+
+	<!-- Mermaid -->
+	<script type="module">
+		import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+		mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+
+		let pyodide;
+		const folderMessage = document.getElementById("selected-folder");
+		const folderInput = document.getElementById("pgn-folder");
+		const folderPicker = document.getElementById("folder-picker");
+		const selectedFolder = document.getElementById("selected-folder");
+		const optionsContainer = document.getElementById("options");
+		const optionsHeading = document.getElementById("options-heading");
+		const sideSelect = document.getElementById("side-select");
+		const maxPlyInput = document.getElementById("max-ply");
+		const themeToggle = document.getElementById("dark-theme");
+		const downloadBtn = document.getElementById("download-btn");
+		const diagramTitle = document.getElementById("diagram-title");
+		const sectionsContainer = document.getElementById("sections-container");
+		const legendDiv = document.getElementById("legend");
+		const statusEl = document.getElementById("status");
+		const THEME_STORAGE_KEY = "chess-toolbox-theme";
+		const UPLOAD_BASE = "/tmp/repertoire_uploads";
+		const diagramDefinitions = new Map();
+		const textEncoder = new TextEncoder();
+		const textDecoder = new TextDecoder("utf-8");
+		let lastMarkdown = "";
+		let currentDownloadName = "PGN_variations_overview.md";
+
+		folderInput.value = "";
+
+		function applyTheme(theme, { persist = true } = {}) {
+			const normalized = theme === "dark" ? "dark" : "light";
+			document.documentElement.dataset.theme = normalized;
+			if (persist) {
+				try {
+					localStorage.setItem(THEME_STORAGE_KEY, normalized);
+				} catch (err) {
+					console.warn("Unable to persist theme", err);
+				}
+			}
+			if (themeToggle) {
+				themeToggle.checked = normalized === "dark";
+			}
+			void rerenderAllDiagrams();
+		}
+
+		function initTheme() {
+			let storedTheme = null;
+			try {
+				storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+			} catch (err) {
+				console.warn("Unable to read theme preference", err);
+			}
+			const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+			const initialTheme = storedTheme || (prefersDark ? "dark" : "light");
+			applyTheme(initialTheme, { persist: false });
+			if (themeToggle) {
+				themeToggle.checked = initialTheme === "dark";
+				themeToggle.addEventListener("change", () => {
+					applyTheme(themeToggle.checked ? "dark" : "light");
+				});
+			}
+		}
+
+		function showUploadControls() {
+			folderMessage.classList.remove("hidden");
+			folderPicker.classList.remove("hidden");
+			if (optionsHeading) {
+				optionsHeading.classList.remove("hidden");
+			}
+			optionsContainer.classList.remove("hidden");
+		}
+
+		initTheme();
+
+		async function initPython() {
+			pyodide = await loadPyodide({ fullStdLib: false });
+
+			statusEl.textContent = "Installing python-chess…";
+			await pyodide.loadPackage("micropip");
+			await pyodide.runPythonAsync(`
+				import micropip
+				await micropip.install("chess")
+			`);
+
+			statusEl.textContent = "Loading repertoire overview logic…";
+
+			const commonCode = await fetch("../common.py").then(r => r.text());
+			await pyodide.FS.writeFile("common.py", commonCode);
+
+			const overviewCode = await fetch("../repertoire_overview.py").then(r => r.text());
+			await pyodide.FS.writeFile("repertoire_overview.py", overviewCode);
+
+			pyodide.runPython("from repertoire_overview import main");
+
+			statusEl.textContent = "Ready. Pick the PGN folder from your repertoire.";
+			showUploadControls();
+		}
+
+		initPython();
+
+		folderPicker.addEventListener("click", () => {
+			folderInput.click();
+		});
+
+		folderInput.addEventListener("change", async (event) => {
+			const files = Array.from(event.target.files || []);
+			const pgnFiles = files.filter((file) => file.name.toLowerCase().endsWith(".pgn"));
+
+			if (!pgnFiles.length) {
+				statusEl.textContent = "Select a folder that contains at least one .pgn file.";
+				folderInput.value = "";
+				return;
+			}
+
+			downloadBtn.disabled = true;
+			downloadBtn.classList.add("hidden");
+			diagramTitle.classList.add("hidden");
+			sectionsContainer.innerHTML = "";
+			legendDiv.innerHTML = "";
+			selectedFolder.textContent = "Preparing files…";
+			statusEl.textContent = "Copying PGNs into the embedded filesystem…";
+
+			try {
+				const stagingInfo = await stageFilesInPyodide(pgnFiles);
+				const sidePreference = sideSelect.value;
+				const maxPlyValue = parseMaxPly(maxPlyInput.value);
+				currentDownloadName = deriveMarkdownName(stagingInfo.displayName);
+				selectedFolder.textContent = `Folder: ${stagingInfo.displayName}`;
+
+				statusEl.textContent = "Inferring repertoire overview…";
+				const outputPath = `${stagingInfo.rootPath}/PGN_variations_overview.md`;
+				const args = buildCliArgs(stagingInfo.rootPath, outputPath, sidePreference, maxPlyValue);
+				const exitCode = await pyodide.runPythonAsync(`
+import sys
+from repertoire_overview import main
+sys.argv = ${JSON.stringify(args)}
+main()
+				`);
+
+				if (exitCode !== 0) {
+					throw new Error(`Python exited with code ${exitCode}`);
+				}
+
+				const markdownData = pyodide.FS.readFile(outputPath);
+				const markdown = typeof markdownData === "string" ? markdownData : textDecoder.decode(markdownData);
+				lastMarkdown = markdown;
+				renderOverview(markdown, stagingInfo.displayName);
+				statusEl.textContent = "Done.";
+				downloadBtn.disabled = false;
+				downloadBtn.classList.remove("hidden");
+			} catch (err) {
+				console.error(err);
+				statusEl.textContent = `Something went wrong: ${err.message}`;
+				selectedFolder.textContent = "No folder selected.";
+			} finally {
+				folderInput.value = "";
+			}
+		});
+
+		downloadBtn.addEventListener("click", () => {
+			if (!lastMarkdown) {
+				return;
+			}
+			const blob = new Blob([lastMarkdown], { type: "text/markdown" });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = currentDownloadName;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+		});
+
+		async function stageFilesInPyodide(files) {
+			const sessionDir = `${UPLOAD_BASE}/session_${Date.now()}`;
+			try {
+				pyodide.FS.mkdirTree(sessionDir);
+			} catch (err) {
+				if (err.code !== "EEXIST") {
+					throw err;
+				}
+			}
+
+			let topLevelFolder = null;
+			let written = 0;
+			for (const file of files) {
+				const relativeParts = normalizeRelativePath(file);
+				if (!relativeParts.length) {
+					continue;
+				}
+				if (!topLevelFolder) {
+					topLevelFolder = relativeParts[0];
+				}
+				const filePath = `${sessionDir}/${relativeParts.join("/")}`;
+				const dirPath = filePath.slice(0, filePath.lastIndexOf("/"));
+				if (dirPath) {
+					pyodide.FS.mkdirTree(dirPath);
+				}
+				const content = await file.text();
+				const encoded = textEncoder.encode(content);
+				pyodide.FS.writeFile(filePath, encoded);
+				written += 1;
+			}
+
+			if (!written) {
+				throw new Error("No PGN files could be copied");
+			}
+
+			const rootPath = topLevelFolder ? `${sessionDir}/${topLevelFolder}` : sessionDir;
+			const displayName = topLevelFolder || "repertoire";
+			return { rootPath, displayName };
+		}
+
+		function normalizeRelativePath(file) {
+			const relative = file.webkitRelativePath && file.webkitRelativePath.length > 0
+				? file.webkitRelativePath
+				: file.name;
+			return relative.split("/").filter(Boolean);
+		}
+
+		function buildCliArgs(rootPath, outputPath, side, maxPly) {
+			const args = ["repertoire_overview.py", "--pgn-root", rootPath, "--output", outputPath, "--side", side];
+			if (typeof maxPly === "number" && Number.isFinite(maxPly) && maxPly >= 0) {
+				args.push("--max-ply", String(maxPly));
+			}
+			return args;
+		}
+
+		function parseMaxPly(value) {
+			const parsed = Number.parseInt(String(value), 10);
+			if (Number.isNaN(parsed) || parsed < 0) {
+				return 4;
+			}
+			return parsed;
+		}
+
+		function deriveMarkdownName(folderName) {
+			const safe = (folderName || "overview").trim() || "overview";
+			return `${safe}_PGN_variations_overview.md`;
+		}
+
+		function renderOverview(markdown, folderLabel) {
+			const parsed = parseOverviewMarkdown(markdown);
+			diagramTitle.textContent = parsed.title || `Repertoire diagram (${folderLabel})`;
+			diagramTitle.classList.remove("hidden");
+			sectionsContainer.innerHTML = "";
+			diagramDefinitions.clear();
+
+			parsed.sections.forEach((section, idx) => {
+				const sectionEl = document.createElement("section");
+				sectionEl.className = "diagram-section";
+
+				const heading = document.createElement("h3");
+				heading.textContent = section.title;
+				sectionEl.appendChild(heading);
+
+				const pre = document.createElement("pre");
+				pre.className = "mermaid";
+				pre.id = `diagram-section-${idx}`;
+				sectionEl.appendChild(pre);
+				diagramDefinitions.set(pre.id, section.diagram);
+
+				if (section.tableMarkdown) {
+					const tableHeading = document.createElement("h4");
+					tableHeading.textContent = "Terminal references";
+					sectionEl.appendChild(tableHeading);
+					const tableWrapper = document.createElement("div");
+					tableWrapper.innerHTML = tableMarkdownToHtml(section.tableMarkdown);
+					sectionEl.appendChild(tableWrapper);
+				}
+
+				sectionsContainer.appendChild(sectionEl);
+			});
+
+			legendDiv.innerHTML = parsed.footer ? `<p>${escapeHtml(parsed.footer)}</p>` : "";
+			void rerenderAllDiagrams();
+		}
+
+		function parseOverviewMarkdown(markdown) {
+			const lines = markdown.split(/\r?\n/);
+			const sections = [];
+			let title = "";
+			let idx = 0;
+			let footer = "";
+
+			while (idx < lines.length) {
+				const line = lines[idx];
+				if (!title && line.startsWith("# ")) {
+					title = line.slice(2).trim();
+					idx += 1;
+					continue;
+				}
+				if (line.startsWith("> ")) {
+					footer = line.replace(/^>\s*/, "").trim();
+				}
+				if (line.startsWith("## ")) {
+					const sectionTitle = line.slice(3).trim();
+					idx += 1;
+					while (idx < lines.length && !lines[idx].trim()) {
+						idx += 1;
+					}
+					let diagramDef = "";
+					if (lines[idx] === "```mermaid") {
+						idx += 1;
+						const diagramLines = [];
+						while (idx < lines.length && lines[idx] !== "```") {
+							diagramLines.push(lines[idx]);
+							idx += 1;
+						}
+						diagramDef = diagramLines.join("\n");
+						idx += 1;
+					}
+					while (idx < lines.length && !lines[idx].trim()) {
+						idx += 1;
+					}
+					if (idx < lines.length && lines[idx].startsWith("###")) {
+						idx += 1;
+					}
+					while (idx < lines.length && !lines[idx].trim()) {
+						idx += 1;
+					}
+					const tableLines = [];
+					while (idx < lines.length && lines[idx].startsWith("|")) {
+						tableLines.push(lines[idx]);
+						idx += 1;
+					}
+					sections.push({
+						title: sectionTitle,
+						diagram: diagramDef,
+						tableMarkdown: tableLines.join("\n"),
+					});
+					continue;
+				}
+				idx += 1;
+			}
+
+			return { title, sections, footer };
+		}
+
+		function escapeHtml(str) {
+			return str
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;")
+				.replace(/"/g, "&quot;")
+				.replace(/'/g, "&#39;");
+		}
+
+		function tableMarkdownToHtml(markdown) {
+			const rows = markdown.split(/\r?\n/).filter(Boolean);
+			if (!rows.length) {
+				return "";
+			}
+			const bodyRows = rows.filter((row) => !/^\|\s*-+/.test(row));
+			const htmlRows = bodyRows.map((row, idx) => {
+				const cells = row.split("|").slice(1, -1).map((cell, cellIdx) => {
+					const tag = idx === 0 ? "th" : "td";
+					return `<${tag}>${escapeHtml(cell.trim())}</${tag}>`;
+				}).join("");
+				return `<tr>${cells}</tr>`;
+			});
+			return `<table>${htmlRows.join("")}</table>`;
+		}
+
+		function getMermaidTheme() {
+			return document.documentElement.dataset.theme === "dark" ? "dark" : "neutral";
+		}
+
+		async function rerenderAllDiagrams() {
+			for (const [elementId, definition] of diagramDefinitions.entries()) {
+				const target = document.getElementById(elementId);
+				if (!target || !definition) {
+					continue;
+				}
+				const { svg } = await mermaid.render(`diagram_${elementId}_${Date.now()}`, definition, undefined, { theme: getMermaidTheme() });
+				target.innerHTML = svg;
+			}
+		}
+	</script>
+</body>
+
+</html>
