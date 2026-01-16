@@ -7,10 +7,9 @@
 	<link rel="stylesheet" href="../tools-shared.css" />
 
 	<style>
-		#selected-folder {
+		#max-ply {
+			width: 5ch;
 			text-align: center;
-			color: var(--muted-color);
-			font-size: 0.95rem;
 		}
 
 		.diagram-section {
@@ -53,8 +52,6 @@
 		<input type="file" id="pgn-folder" accept=".pgn" webkitdirectory multiple class="hidden" />
 		<button id="folder-picker" class="hidden folder-button">Choose PGN folder</button>
 	</div>
-
-	<p id="selected-folder" class="hidden">No folder selected yet.</p>
 
 	<p id="options-heading" class="options-heading hidden">Diagram options</p>
 
@@ -108,10 +105,8 @@
 		mermaid.initialize({ startOnLoad: false, theme: "neutral" });
 
 		let pyodide;
-		const folderMessage = document.getElementById("selected-folder");
 		const folderInput = document.getElementById("pgn-folder");
 		const folderPicker = document.getElementById("folder-picker");
-		const selectedFolder = document.getElementById("selected-folder");
 		const optionsContainer = document.getElementById("options");
 		const optionsHeading = document.getElementById("options-heading");
 		const sideSelect = document.getElementById("side-select");
@@ -168,7 +163,6 @@
 		}
 
 		function showUploadControls() {
-			folderMessage.classList.remove("hidden");
 			folderPicker.classList.remove("hidden");
 			if (optionsHeading) {
 				optionsHeading.classList.remove("hidden");
@@ -223,7 +217,6 @@
 			diagramTitle.classList.add("hidden");
 			sectionsContainer.innerHTML = "";
 			legendDiv.innerHTML = "";
-			selectedFolder.textContent = "Preparing files…";
 			statusEl.textContent = "Copying PGNs into the embedded filesystem…";
 
 			try {
@@ -232,7 +225,6 @@
 				const usePieceSymbols = pieceSymbolsInput.checked;
 				const maxPlyValue = parseMaxPly(maxPlyInput.value);
 				currentDownloadName = deriveMarkdownName(stagingInfo.displayName);
-				selectedFolder.textContent = `Folder: ${stagingInfo.displayName}`;
 
 				statusEl.textContent = "Inferring repertoire overview…";
 				const outputPath = `${stagingInfo.rootPath}/PGN_variations_overview.md`;
@@ -262,7 +254,6 @@ main(argv=${JSON.stringify(args)})
 			} catch (err) {
 				console.error(err);
 				statusEl.textContent = `Something went wrong: ${err.message}`;
-				selectedFolder.textContent = "No folder selected.";
 			} finally {
 				folderInput.value = "";
 			}
@@ -356,7 +347,7 @@ main(argv=${JSON.stringify(args)})
 
 		function renderOverview(markdown, folderLabel) {
 			const parsed = parseOverviewMarkdown(markdown);
-			diagramTitle.textContent = parsed.title || `Repertoire diagram (${folderLabel})`;
+			diagramTitle.textContent = parsed.title || `Repertoire overview (${folderLabel})`;
 			diagramTitle.classList.remove("hidden");
 			sectionsContainer.innerHTML = "";
 			diagramDefinitions.clear();
