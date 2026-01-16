@@ -294,10 +294,10 @@
 
 			statusEl.textContent = "Loading repertoire overview logic…";
 
-			const commonCode = await fetch("../common.py").then(r => r.text());
+			const commonCode = await fetch("../../common.py").then(r => r.text());
 			await pyodide.FS.writeFile("common.py", commonCode);
 
-			const overviewCode = await fetch("../repertoire_overview.py").then(r => r.text());
+			const overviewCode = await fetch("../../repertoire_overview.py").then(r => r.text());
 			await pyodide.FS.writeFile("repertoire_overview.py", overviewCode);
 
 			pyodide.runPython("from repertoire_overview import main");
