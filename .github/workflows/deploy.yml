@@ -38,6 +38,7 @@ jobs:
 
           # Web files
           cp index.html "$SITE_DIR/"
+          cp tools-shared.css "$SITE_DIR/"
           rsync -a --delete pgn-tree "$SITE_DIR/"
           rsync -a --delete repertoire-overview "$SITE_DIR/"
 

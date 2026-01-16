@@ -4,75 +4,9 @@
 <head>
 	<meta charset="utf-8" />
 	<title>Repertoire visualizer</title>
+	<link rel="stylesheet" href="../tools-shared.css" />
 
 	<style>
-		:root {
-			--bg-color: #f8fafc;
-			--canvas-bg: #ffffff;
-			--text-color: #0f172a;
-			--muted-color: #475569;
-			/* --panel-bg: #ffffff; */
-			/* --panel-border: #cbd5f5; */
-		}
-
-		[data-theme="dark"] {
-			--bg-color: #0f172a;
-			--canvas-bg: #0f172a;
-			--text-color: #e2e8f0;
-			--muted-color: #94a3b8;
-			/* --panel-bg: #0f172a; */
-			/* --panel-border: #334155; */
-		}
-
-		body {
-			font-family: sans-serif;
-			margin: 2rem auto;
-			max-width: 900px;
-			line-height: 1.5;
-			background-color: var(--bg-color);
-			color: var(--text-color);
-		}
-
-		.hidden {
-			display: none !important;
-		}
-
-		.page-title {
-			text-align: center;
-		}
-
-		.options-heading {
-			margin: 1.5rem 0 0.25rem;
-			font-weight: 600;
-			color: var(--text-color);
-		}
-
-		#options {
-			margin: 1rem 0;
-			display: flex;
-			flex-wrap: wrap;
-			gap: 1rem;
-			align-items: center;
-		}
-
-		#options label,
-		.theme-toggle {
-			display: flex;
-			align-items: center;
-			gap: 0.35rem;
-		}
-
-		#diagram-title {
-			text-align: center;
-			margin-top: 1rem;
-		}
-
-		.loading {
-			color: var(--muted-color);
-			font-style: italic;
-			text-align: center;
-		}
-
 		#selected-folder {
 			text-align: center;
 			color: var(--muted-color);
@@ -80,9 +14,6 @@
 		}
 
 		.diagram-section {
-			/* background: var(--panel-bg); */
-			/* border: 1px solid var(--panel-border); */
-			/* border-radius: 8px; */
 			padding: 1.25rem;
 			margin-top: 2rem;
 		}
@@ -103,41 +34,6 @@
 			border: 1px solid var(--panel-border);
 			padding: 0.35rem 0.45rem;
 			text-align: left;
-		}
-
-		footer {
-			margin-top: 3rem;
-			font-size: 0.9rem;
-			color: var(--text-color);
-			display: flex;
-			flex-wrap: wrap;
-			justify-content: space-between;
-			gap: 0.75rem;
-		}
-
-		footer a {
-			color: inherit;
-			text-decoration: underline;
-		}
-
-		footer .powered-by {
-			color: var(--muted-color);
-			flex-basis: 100%;
-			text-align: right;
-			margin-bottom: 0.5rem;
-		}
-
-		footer .footnote {
-			flex-basis: 100%;
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			gap: 1rem;
-		}
-
-		footer .footnote-text {
-			font-style: italic;
-			text-align: right;
 		}
 
 		.folder-button {
