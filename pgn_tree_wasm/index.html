@@ -99,12 +99,16 @@
     }
 
     footer .footnote {
-      font-style: italic;
       flex-basis: 100%;
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 1rem;
+    }
+
+    footer .footnote-text {
+      font-style: italic;
+      text-align: right;
     }
   </style>
 </head>
@@ -152,7 +156,7 @@
         <input type="checkbox" id="dark-theme" />
         Dark theme
       </label>
-      This tool runs locally in your browser. It's free and anonymous, your PGNs aren't sent anywhere.
+      <span class="footnote-text">This tool runs locally in your browser. It's free and anonymous, your PGNs aren't sent anywhere.</span>
     </span>
     <span class="powered-by">
       Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
