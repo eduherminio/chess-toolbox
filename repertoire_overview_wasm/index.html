@@ -164,6 +164,10 @@
 
 	<div id="options" class="hidden">
 		<label>
+			<input type="checkbox" id="piece-symbols" checked />
+			Show chess piece symbols
+		</label>
+		<label>
 			Repertoire side
 			<select id="side-select">
 				<option value="auto" selected>Auto (detect)</option>
@@ -215,6 +219,7 @@
 		const optionsContainer = document.getElementById("options");
 		const optionsHeading = document.getElementById("options-heading");
 		const sideSelect = document.getElementById("side-select");
+		const pieceSymbolsInput = document.getElementById("piece-symbols");
 		const maxPlyInput = document.getElementById("max-ply");
 		const themeToggle = document.getElementById("dark-theme");
 		const downloadBtn = document.getElementById("download-btn");
@@ -297,7 +302,7 @@
 
 			pyodide.runPython("from repertoire_overview import main");
 
-			statusEl.textContent = "Ready. Pick the PGN folder from your repertoire.";
+			statusEl.textContent = "Ready. Pick some PGN files from your repertoire.";
 			showUploadControls();
 		}
 
@@ -328,18 +333,23 @@
 			try {
 				const stagingInfo = await stageFilesInPyodide(pgnFiles);
 				const sidePreference = sideSelect.value;
+				const usePieceSymbols = pieceSymbolsInput.checked;
 				const maxPlyValue = parseMaxPly(maxPlyInput.value);
 				currentDownloadName = deriveMarkdownName(stagingInfo.displayName);
 				selectedFolder.textContent = `Folder: ${stagingInfo.displayName}`;
 
 				statusEl.textContent = "Inferring repertoire overview…";
 				const outputPath = `${stagingInfo.rootPath}/PGN_variations_overview.md`;
-				const args = buildCliArgs(stagingInfo.rootPath, outputPath, sidePreference, maxPlyValue);
+				const args = buildCliArgs(
+					stagingInfo.rootPath,
+					outputPath,
+					sidePreference,
+					maxPlyValue,
+					usePieceSymbols,
+				);
 				const exitCode = await pyodide.runPythonAsync(`
-import sys
 from repertoire_overview import main
-sys.argv = ${JSON.stringify(args)}
-main()
+main(argv=${JSON.stringify(args)})
 				`);
 
 				if (exitCode !== 0) {
@@ -424,10 +434,13 @@ main()
 			return relative.split("/").filter(Boolean);
 		}
 
-		function buildCliArgs(rootPath, outputPath, side, maxPly) {
-			const args = ["repertoire_overview.py", "--pgn-root", rootPath, "--output", outputPath, "--side", side];
+		function buildCliArgs(rootPath, outputPath, side, maxPly, pieceSymbols) {
+			const args = ["--pgn-root", rootPath, "--output", outputPath, "--side", side];
 			if (typeof maxPly === "number" && Number.isFinite(maxPly) && maxPly >= 0) {
 				args.push("--max-ply", String(maxPly));
+			}
+			if (pieceSymbols) {
+				args.push("--piece-symbols");
 			}
 			return args;
 		}

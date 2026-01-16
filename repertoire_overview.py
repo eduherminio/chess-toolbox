@@ -74,7 +74,7 @@ class DiagramSection:
     sources: Sequence[str]
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--pgn-root",
@@ -100,7 +100,12 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Orientation for the repertoire. Auto mode infers the side from branching heuristics.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--piece-symbols",
+        action="store_true",
+        help="Render moves with Unicode chess piece symbols instead of SAN letters.",
+    )
+    return parser.parse_args(argv)
 
 
 def collect_branching_stats_from_game(game: chess.pgn.Game) -> dict[int, BranchingStats]:
@@ -171,6 +176,7 @@ def build_diagram(
     side: RepertoireSide,
     max_ply: int | None,
     root_label: str | None = None,
+    use_piece_symbols: bool = False,
 ) -> tuple[list[DiagramNode], list[DiagramEdge]]:
     visible_parity = 1 if side == RepertoireSide.WHITE else 0
     opponent_parity = 1 - visible_parity
@@ -204,7 +210,11 @@ def build_diagram(
         if node.ply == 0:
             base_label = root_label or "Initial position"
         else:
-            base_label = format_single_move(node.ply, node.move or "")
+            base_label = format_single_move(
+                node.ply,
+                node.move or "",
+                use_piece_symbols=use_piece_symbols,
+            )
         count = len(node.sources)
         label = f"{base_label} ({count} PGN)" if count > 1 else base_label
         nodes.append(
@@ -246,7 +256,11 @@ def build_diagram(
             if not opponent_node.children:
                 attach_path_block(source_node, source_id)
                 continue
-            edge_label = format_single_move(opponent_node.ply, opponent_node.move or "")
+            edge_label = format_single_move(
+                opponent_node.ply,
+                opponent_node.move or "",
+                use_piece_symbols=use_piece_symbols,
+            )
             branch_connected = False
             for reply in sorted(opponent_node.children):
                 reply_node = opponent_node.children[reply]
@@ -318,12 +332,12 @@ def render_mermaid(nodes: Sequence[DiagramNode], edges: Sequence[DiagramEdge]) -
     return "\n".join(lines)
 
 
-def render_table(nodes: Sequence[DiagramNode]) -> str:
+def render_table(nodes: Sequence[DiagramNode], use_piece_symbols: bool = False) -> str:
     rows = ["| Node | File | Sequence |", "| --- | --- | --- |"]
     for node in nodes:
         if node.kind != "path":
             continue
-        sequence = format_sequence(node.sequence)
+        sequence = format_sequence(node.sequence, use_piece_symbols=use_piece_symbols)
         if node.sources:
             file_paths = "<br/>".join(node.sources)
         else:
@@ -332,7 +346,11 @@ def render_table(nodes: Sequence[DiagramNode]) -> str:
     return "\n".join(rows)
 
 
-def build_markdown(title: str, sections: Sequence[DiagramSection]) -> str:
+def build_markdown(
+    title: str,
+    sections: Sequence[DiagramSection],
+    use_piece_symbols: bool = False,
+) -> str:
     parts = [
         f"# {title}",
         "Automatically generated overview of the main repertoire lines.",
@@ -348,14 +366,14 @@ def build_markdown(title: str, sections: Sequence[DiagramSection]) -> str:
             "```",
             "",
             "### Terminal references",
-            render_table(section.nodes),
+            render_table(section.nodes, use_piece_symbols=use_piece_symbols),
             "",
         ])
     parts.append("> Source: scripts/generate_main_variations_multipgn.py")
     return "\n".join(parts)
 
-def main() -> int:
-    args = parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
     if args.pgn_root is None:
         print("--pgn-root must be provided", file=sys.stderr)
         return 1
@@ -431,7 +449,13 @@ def main() -> int:
             else:
                 effective_root_label = stored_root_label
 
-            nodes, edges = build_diagram(bucket.root, side, max_ply, effective_root_label)
+            nodes, edges = build_diagram(
+                bucket.root,
+                side,
+                max_ply,
+                root_label=effective_root_label,
+                use_piece_symbols=args.piece_symbols,
+            )
             if len(nodes) <= 1 and not edges:
                 continue
             origin_label = "starting position" if root_key == "startpos" else root_origins[root_key]
@@ -450,7 +474,7 @@ def main() -> int:
         print("No diagrams could be generated from the provided PGN files.", file=sys.stderr)
         return 1
 
-    markdown = build_markdown(title, sections)
+    markdown = build_markdown(title, sections, use_piece_symbols=args.piece_symbols)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(markdown, encoding="utf-8")

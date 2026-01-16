@@ -78,18 +78,27 @@ def format_single_move(
     return f"{prefix} {rendered_move}"
 
 
-def format_sequence(sequence: Sequence[str]) -> str:
+def format_sequence(sequence: Sequence[str], use_piece_symbols: bool = False) -> str:
     if not sequence:
         return "(start)"
     parts: list[str] = []
     move_number = 1
     idx = 0
     while idx < len(sequence):
-        white_move = sequence[idx]
+        white_move = (
+            sequence[idx].translate(PIECE_SYMBOLS)
+            if use_piece_symbols
+            else sequence[idx]
+        )
         segment = f"{move_number}. {white_move}"
         idx += 1
         if idx < len(sequence):
-            segment += f" {sequence[idx]}"
+            black_move = (
+                sequence[idx].translate(PIECE_SYMBOLS)
+                if use_piece_symbols
+                else sequence[idx]
+            )
+            segment += f" {black_move}"
             idx += 1
         parts.append(segment)
         move_number += 1
