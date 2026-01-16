@@ -39,8 +39,7 @@ jobs:
           cp repertoire_overview.py "$SITE_DIR/"
 
           # Web files
-          rsync -a --delete --exclude '.DS_Store' pgn_tree_wasm/ "$SITE_DIR/pgn-tree/"
-          rsync -a --delete --exclude '.DS_Store' repertoire_overview_wasm/ "$SITE_DIR/repertoire-overview/"
+          rsync -a --delete --exclude '.DS_Store' wasm/ "$SITE_DIR/"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

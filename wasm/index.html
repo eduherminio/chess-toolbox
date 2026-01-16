@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="utf-8" />
+  <title>Chess toolbox</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --card-bg: rgba(15, 23, 42, 0.6);
+      --border: rgba(148, 163, 184, 0.4);
+    }
+
+    body {
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #1e3a8a, #020617 60%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 3rem 1rem;
+    }
+
+    .shell {
+      max-width: 960px;
+      width: min(90vw, 940px);
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 2.75rem;
+      box-shadow: 0 30px 70px rgba(2, 6, 23, 0.75);
+      backdrop-filter: blur(14px);
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      margin: 0 0 1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    p.lede {
+      color: var(--muted);
+      font-size: 1.1rem;
+      margin: 0 0 2.5rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+
+    a.card {
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.75rem;
+      background: rgba(8, 15, 32, 0.7);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    a.card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 20% -20%, rgba(56, 189, 248, 0.3), transparent 55%);
+      opacity: 0;
+      transition: opacity 200ms ease;
+      pointer-events: none;
+    }
+
+    a.card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(56, 189, 248, 0.6);
+      box-shadow: 0 15px 30px rgba(2, 6, 23, 0.55);
+    }
+
+    a.card:hover::after {
+      opacity: 1;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      color: rgba(248, 250, 252, 0.65);
+    }
+
+    .title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .description {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .pill {
+      margin-top: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.95rem;
+      color: var(--accent);
+    }
+
+    .pill svg {
+      width: 1rem;
+      height: 1rem;
+      fill: currentColor;
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      color: rgba(226, 232, 240, 0.6);
+      font-size: 0.95rem;
+      text-align: right;
+    }
+
+    @media (max-width: 640px) {
+      .shell {
+        padding: 2.25rem;
+        border-radius: 22px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="shell">
+    <h1 style="text-align: center;">Chess toolbox</h1>
+    <p class="lede">Collection of chess-related tools. Check the repository if you're interested in the CLI versions.</p>
+
+    <div class="grid">
+      <a class="card" href="./pgn-tree/" target="_blank">
+        <span class="title">PGN tree visualizer</span>
+        <span class="description">Create a detailed diagram of a single PGN from your repertoire.</span>
+        <span class="pill">
+          Launch tool
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h9M10 5l5 5-5 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+
+      <a class="card" href="./repertoire-overview/" target="_blank">
+        <span class="title">Repertoire overview</span>
+        <span class="description">Create an overview of a group of PGNs from your repertoire.</span>
+        <span class="pill">
+          Launch tool
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h9M10 5l5 5-5 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+    </div>
+
+    <footer class="footer">
+      Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">eduherminio/chess-toolbox</a>
+    </footer>
+  </main>
+</body>
+
+</html>
