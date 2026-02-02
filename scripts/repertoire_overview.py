@@ -185,6 +185,7 @@ def build_diagram(
     edges: list[DiagramEdge] = []
     node_ids: dict[OpeningNode, str] = {}
     node_counter = 0
+    path_nodes_cache: dict[tuple[OpeningNode, str], str] = {}
 
     def next_node_id() -> str:
         nonlocal node_counter
@@ -231,19 +232,23 @@ def build_diagram(
     def attach_path_block(node: OpeningNode, source_id: str) -> None:
         if not node.sources:
             return
-        path_label = sorted(node.sources)[0]
-        file_label = format_path_label(path_label)
-        path_node_id = next_node_id()
-        nodes.append(
-            DiagramNode(
-                id=path_node_id,
-                label=file_label,
-                sequence=node.sequence,
-                sources=(path_label,),
-                kind="path",
-            )
-        )
-        edges.append(DiagramEdge(source=source_id, target=path_node_id, label=""))
+        for path_label in sorted(node.sources):
+            cache_key = (node, path_label)
+            path_node_id = path_nodes_cache.get(cache_key)
+            if path_node_id is None:
+                file_label = format_path_label(path_label)
+                path_node_id = next_node_id()
+                nodes.append(
+                    DiagramNode(
+                        id=path_node_id,
+                        label=file_label,
+                        sequence=node.sequence,
+                        sources=(path_label,),
+                        kind="path",
+                    )
+                )
+                path_nodes_cache[cache_key] = path_node_id
+            edges.append(DiagramEdge(source=source_id, target=path_node_id, label=""))
 
     def connect_from_opponent(source_node: OpeningNode, source_id: str, force: bool = False) -> None:
         if not force and not should_expand_children(source_node):
