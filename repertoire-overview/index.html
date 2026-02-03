@@ -11,7 +11,7 @@
 	<main class="app-shell">
 		<section class="hero">
 			<h1>Repertoire visualizer</h1>
-			<p>Get an overview of your repertoire by uploading a folder with multiple PGN files.</p>
+			<p>Get an overview of your repertoire.</p>
 		</section>
 
 		<section class="panel">
@@ -47,7 +47,8 @@
 		<section class="panel">
 			<div class="panel-heading">
 				<h2 id="diagram-title" class="hidden"></h2>
-				<button id="download-btn" class="ghost-btn hidden" disabled>Download overview ⭳</button>
+				<button id="download-btn" class="ghost-btn hidden" disabled>Download markdown ⭳</button>
+				<button id="download-images-btn" class="ghost-btn hidden" disabled>Download images ⭳</button>
 			</div>
 			<div id="sections-container" class="sections-stack"></div>
 			<div id="legend" class="legend-block"></div>
@@ -76,6 +77,7 @@
 		const pieceSymbolsInput = document.getElementById("piece-symbols");
 		const maxPlyInput = document.getElementById("max-ply");
 		const downloadBtn = document.getElementById("download-btn");
+		const downloadImagesBtn = document.getElementById("download-images-btn");
 		const diagramTitle = document.getElementById("diagram-title");
 		const sectionsContainer = document.getElementById("sections-container");
 		const legendDiv = document.getElementById("legend");
@@ -84,6 +86,8 @@
 		const diagramDefinitions = new Map();
 		const textEncoder = new TextEncoder();
 		const textDecoder = new TextDecoder("utf-8");
+		const svgSerializer = new XMLSerializer();
+		const IMAGE_EXPORT_SCALE = 3;
 		let lastMarkdown = "";
 		let currentDownloadName = "PGN_variations_overview.md";
 
@@ -139,6 +143,8 @@
 
 			downloadBtn.disabled = true;
 			downloadBtn.classList.add("hidden");
+			downloadImagesBtn.disabled = true;
+			downloadImagesBtn.classList.add("hidden");
 			diagramTitle.classList.add("hidden");
 			sectionsContainer.innerHTML = "";
 			legendDiv.innerHTML = "";
@@ -172,10 +178,14 @@ main(argv=${JSON.stringify(args)})
 				const markdownData = pyodide.FS.readFile(outputPath);
 				const markdown = typeof markdownData === "string" ? markdownData : textDecoder.decode(markdownData);
 				lastMarkdown = markdown;
-				renderOverview(markdown, stagingInfo.displayName);
+				const hasDiagrams = await renderOverview(markdown, stagingInfo.displayName);
 				statusEl.textContent = "Done.";
 				downloadBtn.disabled = false;
 				downloadBtn.classList.remove("hidden");
+				if (hasDiagrams) {
+					downloadImagesBtn.disabled = false;
+					downloadImagesBtn.classList.remove("hidden");
+				}
 			} catch (err) {
 				console.error(err);
 				statusEl.textContent = `Something went wrong: ${err.message}`;
@@ -197,6 +207,27 @@ main(argv=${JSON.stringify(args)})
 			link.click();
 			document.body.removeChild(link);
 			URL.revokeObjectURL(url);
+		});
+
+		downloadImagesBtn.addEventListener("click", async () => {
+			if (!diagramDefinitions.size) {
+				return;
+			}
+			downloadImagesBtn.disabled = true;
+			const previousStatus = statusEl.textContent;
+			statusEl.textContent = "Building diagram images…";
+			try {
+				await downloadAllDiagramImages();
+				statusEl.textContent = "Diagram images downloaded.";
+			} catch (err) {
+				console.error(err);
+				statusEl.textContent = `Failed to export diagrams: ${err.message}`;
+			} finally {
+				downloadImagesBtn.disabled = false;
+				setTimeout(() => {
+					statusEl.textContent = previousStatus;
+				}, 4000);
+			}
 		});
 
 		async function stageFilesInPyodide(files) {
@@ -270,7 +301,7 @@ main(argv=${JSON.stringify(args)})
 			return `${safe}_PGN_variations_overview.md`;
 		}
 
-		function renderOverview(markdown, folderLabel) {
+		async function renderOverview(markdown, folderLabel) {
 			const parsed = parseOverviewMarkdown(markdown);
 			diagramTitle.textContent = parsed.title || `Repertoire overview (${folderLabel})`;
 			diagramTitle.classList.remove("hidden");
@@ -292,7 +323,7 @@ main(argv=${JSON.stringify(args)})
 				pre.id = `diagram-section-${idx}`;
 				diagramWrapper.appendChild(pre);
 				sectionEl.appendChild(diagramWrapper);
-				diagramDefinitions.set(pre.id, section.diagram);
+				diagramDefinitions.set(pre.id, { definition: section.diagram, title: section.title });
 
 				if (section.tableMarkdown) {
 					const tableHeading = document.createElement("h4");
@@ -307,7 +338,8 @@ main(argv=${JSON.stringify(args)})
 			});
 
 			legendDiv.innerHTML = parsed.footer ? `<p>${escapeHtml(parsed.footer)}</p>` : "";
-			void renderAllDiagrams();
+			await renderAllDiagrams();
+			return diagramDefinitions.size > 0;
 		}
 
 		function parseOverviewMarkdown(markdown) {
@@ -397,14 +429,115 @@ main(argv=${JSON.stringify(args)})
 		}
 
 		async function renderAllDiagrams() {
-			for (const [elementId, definition] of diagramDefinitions.entries()) {
+			for (const [elementId, info] of diagramDefinitions.entries()) {
 				const target = document.getElementById(elementId);
-				if (!target || !definition) {
+				if (!target || !info?.definition) {
 					continue;
 				}
-				const { svg } = await mermaid.render(`diagram_${elementId}_${Date.now()}`, definition, undefined, { theme: "neutral" });
+				const { svg } = await mermaid.render(`diagram_${elementId}_${Date.now()}`, info.definition, undefined, { theme: "neutral" });
 				target.innerHTML = svg;
 			}
+		}
+
+		async function downloadAllDiagramImages() {
+			const entries = Array.from(diagramDefinitions.entries());
+			for (let idx = 0; idx < entries.length; idx += 1) {
+				const [elementId, info] = entries[idx];
+				const svgMarkup = extractSvgMarkup(elementId);
+				if (!svgMarkup) {
+					continue;
+				}
+				const pngBlob = await svgMarkupToPngBlob(svgMarkup);
+				const filename = `${slugify(diagramTitle.textContent || "repertoire")}_${slugify(info?.title || `section_${idx + 1}`)}.png`;
+				triggerFileDownloadFromBlob(pngBlob, filename);
+			}
+		}
+
+		function extractSvgMarkup(elementId) {
+			const root = document.getElementById(elementId);
+			const svg = root?.querySelector("svg");
+			if (!svg) {
+				return "";
+			}
+			try {
+				return svgSerializer.serializeToString(svg);
+			} catch (err) {
+				console.error("Failed to serialize SVG", err);
+				return svg.outerHTML || "";
+			}
+		}
+
+		async function svgMarkupToPngBlob(svgMarkup) {
+			const viewBoxMatch = svgMarkup.match(/viewBox="([\d.\s-]+)"/);
+			const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
+			const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+			const url = URL.createObjectURL(svgBlob);
+			try {
+				const img = await loadImage(url);
+				const baseWidth = viewBox ? viewBox[2] : (img.naturalWidth || img.width || 1);
+				const baseHeight = viewBox ? viewBox[3] : (img.naturalHeight || img.height || 1);
+				const canvas = document.createElement("canvas");
+				canvas.width = Math.max(1, Math.round(baseWidth * IMAGE_EXPORT_SCALE));
+				canvas.height = Math.max(1, Math.round(baseHeight * IMAGE_EXPORT_SCALE));
+				const ctx = canvas.getContext("2d");
+				if (ctx) {
+					ctx.fillStyle = getCanvasBackgroundColor();
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.scale(IMAGE_EXPORT_SCALE, IMAGE_EXPORT_SCALE);
+					ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
+				}
+				return await new Promise((resolve, reject) => {
+					canvas.toBlob((blob) => {
+						if (blob) {
+							resolve(blob);
+						} else {
+							reject(new Error("Could not export canvas"));
+						}
+					}, "image/png");
+				});
+			} finally {
+				URL.revokeObjectURL(url);
+			}
+		}
+
+		function loadImage(url) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				img.decoding = "async";
+				img.crossOrigin = "anonymous";
+				img.onload = () => resolve(img);
+				img.onerror = (event) => {
+					console.error("SVG rasterization failed", event);
+					reject(new Error("Could not load SVG image"));
+				};
+				img.src = url;
+			});
+		}
+
+		function triggerFileDownloadFromBlob(blob, filename) {
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = filename;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+		}
+
+		function slugify(value) {
+			return (value || "")
+				.toString()
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, "_")
+				.replace(/^_+|_+$/g, "")
+				|| "diagram";
+		}
+
+		function getCanvasBackgroundColor() {
+			const styles = getComputedStyle(document.documentElement);
+			const value = styles.getPropertyValue("--canvas-bg").trim();
+			return value || "#ffffff";
 		}
 	</script>
 </body>
