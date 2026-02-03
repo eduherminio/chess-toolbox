@@ -43,7 +43,10 @@
 		<section class="panel">
 			<div class="panel-heading">
 				<h2 id="diagram-title" class="hidden"></h2>
-				<button id="download-btn" class="ghost-btn hidden" disabled>Download diagram ⭳</button>
+				<div class="download-actions">
+					<button id="download-markdown-btn" class="ghost-btn hidden" disabled>Download markdown ⭳</button>
+					<button id="download-image-btn" class="ghost-btn hidden" disabled>Download image ⭳</button>
+				</div>
 			</div>
 			<div class="diagram-wrapper">
 				<pre id="diagram" class="mermaid"></pre>
@@ -69,13 +72,17 @@
 		const optionsHeading = document.getElementById("options-heading");
 		const pieceSymbolsInput = document.getElementById("piece-symbols");
 		const sideSelect = document.getElementById("side-select");
-		const downloadBtn = document.getElementById("download-btn");
+		const downloadMarkdownBtn = document.getElementById("download-markdown-btn");
+		const downloadImageBtn = document.getElementById("download-image-btn");
 		const diagramTitle = document.getElementById("diagram-title");
 		const statusLine = document.getElementById("status");
 		const legendDiv = document.getElementById("legend");
 		let lastDiagramSvg = null;
-		let currentDownloadName = "diagram.jpg";
-		let lastDiagramDefinition = "";
+		let currentImageName = "diagram.jpg";
+		let lastLegendMarkdown = "";
+		let lastMarkdown = "";
+		let currentMarkdownName = "diagram.md";
+		let currentDiagramTitle = "";
 		fileInput.value = "";
 
 		pickButton.addEventListener("click", () => fileInput.click());
@@ -118,12 +125,18 @@
 			if (!file) return;
 
 			statusLine.textContent = "Parsing PGN and generating diagram…";
-			downloadBtn.disabled = true;
-			downloadBtn.classList.add("hidden");
+			downloadImageBtn.disabled = true;
+			downloadImageBtn.classList.add("hidden");
+			downloadMarkdownBtn.disabled = true;
+			downloadMarkdownBtn.classList.add("hidden");
 			diagramTitle.classList.add("hidden");
 			diagramTitle.textContent = "";
 			legendDiv.innerHTML = "";
-			currentDownloadName = deriveJpgName(file.name || "diagram.pgn");
+			currentImageName = deriveJpgName(file.name || "diagram.pgn");
+			currentMarkdownName = deriveMarkdownName(file.name || "diagram.pgn");
+			lastMarkdown = "";
+			lastLegendMarkdown = "";
+			currentDiagramTitle = "";
 
 			const pgnText = await file.text();
 			const pieceSymbols = pieceSymbolsInput.checked;
@@ -141,15 +154,23 @@
 
 			await renderDiagram(diagram);
 			if (lastDiagramSvg) {
-				downloadBtn.disabled = false;
-				downloadBtn.classList.remove("hidden");
+				downloadImageBtn.disabled = false;
+				downloadImageBtn.classList.remove("hidden");
 			}
 
+			const fileLabel = file.name || "Diagram.pgn";
+			currentDiagramTitle = fileLabel;
 			if (sideValue) {
 				const prettySide = sideValue.charAt(0).toUpperCase() + sideValue.slice(1);
-				const fileLabel = file.name || "Diagram.pgn";
-				diagramTitle.textContent = `${fileLabel} · ${prettySide} repertoire`;
+				currentDiagramTitle = `${fileLabel} · ${prettySide} repertoire`;
+				diagramTitle.textContent = currentDiagramTitle;
 				diagramTitle.classList.remove("hidden");
+			}
+			lastLegendMarkdown = legend || "";
+			lastMarkdown = buildDiagramMarkdown(currentDiagramTitle, diagram, lastLegendMarkdown);
+			if (lastMarkdown) {
+				downloadMarkdownBtn.disabled = false;
+				downloadMarkdownBtn.classList.remove("hidden");
 			}
 
 			legendDiv.innerHTML = markedDownToHtml(legend);
@@ -157,7 +178,7 @@
 			fileInput.value = "";
 		});
 
-		downloadBtn.addEventListener("click", async () => {
+		downloadImageBtn.addEventListener("click", async () => {
 			if (!lastDiagramSvg) {
 				return;
 			}
@@ -165,7 +186,22 @@
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = currentDownloadName;
+			link.download = currentImageName;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+		});
+
+		downloadMarkdownBtn.addEventListener("click", () => {
+			if (!lastMarkdown) {
+				return;
+			}
+			const blob = new Blob([lastMarkdown], { type: "text/markdown" });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = currentMarkdownName;
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -217,6 +253,31 @@
 			return `${safeBase}.jpg`;
 		}
 
+		function deriveMarkdownName(originalName) {
+			if (!originalName) {
+				return "diagram.md";
+			}
+			const lastDot = originalName.lastIndexOf(".");
+			const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
+			const safeBase = base.trim() || "diagram";
+			return `${safeBase}_diagram.md`;
+		}
+
+		function buildDiagramMarkdown(title, diagramDefinition, legendMarkdown) {
+			const parts = [];
+			if (title && title.trim()) {
+				parts.push(`# ${title.trim()}`);
+			}
+			if (diagramDefinition && diagramDefinition.trim()) {
+				parts.push("```mermaid", diagramDefinition.trim(), "```");
+			}
+			if (legendMarkdown && legendMarkdown.trim()) {
+				parts.push(legendMarkdown.trim());
+			}
+			const content = parts.join("\n\n").trim();
+			return content ? `${content}\n` : "";
+		}
+
 		function getCanvasBackgroundColor() {
 			const styles = getComputedStyle(document.documentElement);
 			const value = styles.getPropertyValue("--canvas-bg").trim();
@@ -227,7 +288,6 @@
 			if (!definition) {
 				return;
 			}
-			lastDiagramDefinition = definition;
 			const oldPre = document.getElementById("diagram");
 			const newPre = document.createElement("pre");
 			newPre.id = "diagram";
