@@ -1,100 +1,63 @@
 <!DOCTYPE html>
-<html data-theme="light">
+<html lang="en">
 
 <head>
 	<meta charset="utf-8" />
 	<title>Repertoire visualizer</title>
 	<link rel="stylesheet" href="../tools-shared.css" />
-
-	<style>
-		#max-ply {
-			width: 5ch;
-			text-align: center;
-		}
-
-		.diagram-section {
-			padding: 1.25rem;
-			margin-top: 2rem;
-		}
-
-		.diagram-section h3 {
-			margin-top: 0;
-		}
-
-		.diagram-section table {
-			width: 100%;
-			border-collapse: collapse;
-			margin-top: 1rem;
-			font-size: 0.95rem;
-		}
-
-		.diagram-section table td,
-		.diagram-section table th {
-			border: 1px solid var(--panel-border);
-			padding: 0.35rem 0.45rem;
-			text-align: left;
-		}
-
-		.folder-button {
-			margin-top: 0.5rem;
-		}
-	</style>
 </head>
 
 <body>
-	<div class="page-title">
-		<h1>Repertoire visualizer</h1>
-	</div>
+	<main class="app-shell">
+		<section class="hero">
+			<h1>Repertoire visualizer</h1>
+			<p>Get an overview of your repertoire by uploading a folder with multiple PGN files.</p>
+		</section>
 
-	<p id="status" class="loading">Initializing Python and installing python-chess…</p>
+		<section class="panel">
+			<p id="status" class="status-line">Initializing Python and installing python-chess…</p>
+			<div class="file-input-helper">
+				<input type="file" id="pgn-folder" accept=".pgn" webkitdirectory multiple class="hidden" />
+				<button id="folder-picker" class="primary-btn" disabled>Choose PGN folder</button>
+			</div>
 
-	<div style="text-align: center;">
-		<input type="file" id="pgn-folder" accept=".pgn" webkitdirectory multiple class="hidden" />
-		<button id="folder-picker" class="hidden folder-button">Choose PGN folder</button>
-	</div>
+			<h2 id="options-heading" class="options-heading hidden">Diagram options</h2>
+			<div id="options" class="controls-grid hidden">
+				<div class="control-item">
+					<label for="side-select">Repertoire side</label>
+					<select id="side-select">
+						<option value="auto" selected>Auto (detect)</option>
+						<option value="white">White</option>
+						<option value="black">Black</option>
+					</select>
+				</div>
+				<div class="control-item">
+					<label for="max-ply">Max ply depth</label>
+					<input type="number" id="max-ply" min="0" value="4" />
+				</div>
+				<div class="control-item">
+					<span class="checkbox-label">
+						<input type="checkbox" id="piece-symbols" checked />
+						Show chess piece symbols
+					</span>
+				</div>
+			</div>
+		</section>
 
-	<p id="options-heading" class="options-heading hidden">Diagram options</p>
+		<section class="panel">
+			<div class="panel-heading">
+				<h2 id="diagram-title" class="hidden"></h2>
+				<button id="download-btn" class="ghost-btn hidden" disabled>Download overview ⭳</button>
+			</div>
+			<div id="sections-container" class="sections-stack"></div>
+			<div id="legend" class="legend-block"></div>
+		</section>
 
-	<div id="options" class="hidden">
-		<label>
-			<input type="checkbox" id="piece-symbols" checked />
-			Show chess piece symbols
-		</label>
-		<label>
-			Repertoire side
-			<select id="side-select">
-				<option value="auto" selected>Auto (detect)</option>
-				<option value="white">White</option>
-				<option value="black">Black</option>
-			</select>
-		</label>
-		<label>
-			Max ply depth
-			<input type="number" id="max-ply" min="0" value="4" />
-		</label>
-	</div>
-
-	<h2 id="diagram-title" class="hidden"></h2>
-
-	<button id="download-btn" disabled class="hidden">Download overview ⭳</button>
-
-	<div id="sections-container"></div>
-
-	<div id="legend"></div>
-
-	<footer>
-		<span class="footnote">
-			<label class="theme-toggle">
-				<input type="checkbox" id="dark-theme" />
-				Dark theme
-			</label>
-			<span class="footnote-text">This tool runs locally in your browser. It's free and anonymous, your PGNs aren't sent anywhere.</span>
-		</span>
-		<span class="powered-by">
-			Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
-				rel="noopener noreferrer">eduherminio/chess-toolbox</a>
-		</span>
-	</footer>
+		<footer>
+			Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank" rel="noopener noreferrer">eduherminio/chess-toolbox</a>
+			· Runs entirely in your browser
+		</footer>
+	</main>
 
 	<!-- Pyodide -->
 	<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
@@ -112,13 +75,11 @@
 		const sideSelect = document.getElementById("side-select");
 		const pieceSymbolsInput = document.getElementById("piece-symbols");
 		const maxPlyInput = document.getElementById("max-ply");
-		const themeToggle = document.getElementById("dark-theme");
 		const downloadBtn = document.getElementById("download-btn");
 		const diagramTitle = document.getElementById("diagram-title");
 		const sectionsContainer = document.getElementById("sections-container");
 		const legendDiv = document.getElementById("legend");
 		const statusEl = document.getElementById("status");
-		const THEME_STORAGE_KEY = "chess-toolbox-theme";
 		const UPLOAD_BASE = "/tmp/repertoire_uploads";
 		const diagramDefinitions = new Map();
 		const textEncoder = new TextEncoder();
@@ -128,49 +89,13 @@
 
 		folderInput.value = "";
 
-		function applyTheme(theme, { persist = true } = {}) {
-			const normalized = theme === "dark" ? "dark" : "light";
-			document.documentElement.dataset.theme = normalized;
-			if (persist) {
-				try {
-					localStorage.setItem(THEME_STORAGE_KEY, normalized);
-				} catch (err) {
-					console.warn("Unable to persist theme", err);
-				}
-			}
-			if (themeToggle) {
-				themeToggle.checked = normalized === "dark";
-			}
-			void rerenderAllDiagrams();
-		}
-
-		function initTheme() {
-			let storedTheme = null;
-			try {
-				storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-			} catch (err) {
-				console.warn("Unable to read theme preference", err);
-			}
-			const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-			const initialTheme = storedTheme || (prefersDark ? "dark" : "light");
-			applyTheme(initialTheme, { persist: false });
-			if (themeToggle) {
-				themeToggle.checked = initialTheme === "dark";
-				themeToggle.addEventListener("change", () => {
-					applyTheme(themeToggle.checked ? "dark" : "light");
-				});
-			}
-		}
-
 		function showUploadControls() {
-			folderPicker.classList.remove("hidden");
+			folderPicker.disabled = false;
 			if (optionsHeading) {
 				optionsHeading.classList.remove("hidden");
 			}
 			optionsContainer.classList.remove("hidden");
 		}
-
-		initTheme();
 
 		async function initPython() {
 			pyodide = await loadPyodide({ fullStdLib: false });
@@ -354,16 +279,19 @@ main(argv=${JSON.stringify(args)})
 
 			parsed.sections.forEach((section, idx) => {
 				const sectionEl = document.createElement("section");
-				sectionEl.className = "diagram-section";
+				sectionEl.className = "section-card";
 
 				const heading = document.createElement("h3");
 				heading.textContent = section.title;
 				sectionEl.appendChild(heading);
 
+				const diagramWrapper = document.createElement("div");
+				diagramWrapper.className = "diagram-wrapper";
 				const pre = document.createElement("pre");
 				pre.className = "mermaid";
 				pre.id = `diagram-section-${idx}`;
-				sectionEl.appendChild(pre);
+				diagramWrapper.appendChild(pre);
+				sectionEl.appendChild(diagramWrapper);
 				diagramDefinitions.set(pre.id, section.diagram);
 
 				if (section.tableMarkdown) {
@@ -379,7 +307,7 @@ main(argv=${JSON.stringify(args)})
 			});
 
 			legendDiv.innerHTML = parsed.footer ? `<p>${escapeHtml(parsed.footer)}</p>` : "";
-			void rerenderAllDiagrams();
+			void renderAllDiagrams();
 		}
 
 		function parseOverviewMarkdown(markdown) {
@@ -468,17 +396,13 @@ main(argv=${JSON.stringify(args)})
 			return `<table>${htmlRows.join("")}</table>`;
 		}
 
-		function getMermaidTheme() {
-			return document.documentElement.dataset.theme === "dark" ? "dark" : "neutral";
-		}
-
-		async function rerenderAllDiagrams() {
+		async function renderAllDiagrams() {
 			for (const [elementId, definition] of diagramDefinitions.entries()) {
 				const target = document.getElementById(elementId);
 				if (!target || !definition) {
 					continue;
 				}
-				const { svg } = await mermaid.render(`diagram_${elementId}_${Date.now()}`, definition, undefined, { theme: getMermaidTheme() });
+				const { svg } = await mermaid.render(`diagram_${elementId}_${Date.now()}`, definition, undefined, { theme: "neutral" });
 				target.innerHTML = svg;
 			}
 		}

@@ -1,105 +1,244 @@
 :root {
-    --bg-color: #f8fafc;
-    --canvas-bg: #ffffff;
-    --text-color: #0f172a;
-    --muted-color: #475569;
-    /* --panel-bg: #ffffff; */
-    /* --border-color: #cbd5f5; */
-}
-
-[data-theme="dark"] {
-    --bg-color: #0f172a;
-    --canvas-bg: #0f172a;
+    --page-bg: radial-gradient(circle at 20% -10%, #1f3b8a, #05010e 65%);
+    --shell-bg: rgba(7, 11, 22, 0.85);
+    --panel-bg: rgba(12, 20, 38, 0.8);
+    --border-color: rgba(148, 163, 184, 0.4);
     --text-color: #e2e8f0;
     --muted-color: #94a3b8;
-    /* --panel-bg: #1e293b; */
-    /* --border-color: #334155; */
+    --accent-color: #38bdf8;
+    --accent-glow: rgba(56, 189, 248, 0.35);
+    --shadow-color: rgba(1, 5, 16, 0.65);
+    --canvas-bg: #0b1121;
 }
 
 body {
-    font-family: sans-serif;
-    margin: 2rem auto;
-    max-width: 900px;
-    line-height: 1.5;
-    background-color: var(--bg-color);
+    font-family: "Space Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    background: var(--page-bg);
     color: var(--text-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(2rem, 5vw, 4rem) 1.5rem;
+}
+
+.app-shell {
+    width: min(1100px, 95vw);
+    background: var(--shell-bg);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 28px;
+    padding: clamp(2rem, 4vw, 3rem);
+    box-shadow: 0 35px 80px var(--shadow-color);
+    backdrop-filter: blur(14px);
+}
+
+.hero {
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+
+.hero h1 {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3.4rem);
+    letter-spacing: -0.02em;
+}
+
+.hero p {
+    margin: 1rem auto 0;
+    max-width: 580px;
+    color: var(--muted-color);
+    font-size: 1.1rem;
+}
+
+.panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 1.5rem;
+    box-shadow: 0 20px 45px var(--shadow-color);
+}
+
+.panel + .panel {
+    margin-top: 1.5rem;
+}
+
+.options-heading {
+    margin: 1.5rem 0 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.controls-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.control-item {
+    flex: 1 1 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--muted-color);
+    font-size: 0.95rem;
+}
+
+.control-item label {
+    font-weight: 600;
+    color: var(--text-color);
+    font-size: 0.95rem;
+}
+
+.control-item .checkbox-label {
+    font-weight: 600;
+    color: var(--text-color);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.control-item input[type="checkbox"] {
+    accent-color: var(--accent-color);
+}
+
+input[type="number"],
+select,
+button,
+input[type="text"] {
+    font: inherit;
+}
+
+input[type="number"],
+select {
+    background: rgba(8, 13, 26, 0.8);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.5rem 0.9rem;
+    color: var(--text-color);
+}
+
+.file-input-helper {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.primary-btn,
+.ghost-btn {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0.85rem 1.7rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.primary-btn {
+    background: linear-gradient(120deg, #38bdf8, #0ea5e9);
+    color: #05192b;
+    box-shadow: 0 10px 25px rgba(14, 165, 233, 0.4);
+}
+
+.ghost-btn {
+    background: transparent;
+    border-color: rgba(226, 232, 240, 0.4);
+    color: var(--text-color);
+}
+
+.primary-btn:disabled,
+.ghost-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.primary-btn:not(:disabled):hover,
+.ghost-btn:not(:disabled):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 15px 30px rgba(2, 6, 23, 0.5);
+}
+
+.status-line {
+    text-align: center;
+    color: var(--muted-color);
+    font-style: italic;
+    margin-bottom: 1.5rem;
+}
+
+.diagram-wrapper {
+    background: rgba(4, 8, 18, 0.85);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 1.25rem;
+    overflow: auto;
+}
+
+.diagram-wrapper pre {
+    margin: 0;
+}
+
+.panel-heading {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.sections-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.section-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 1.25rem;
+}
+
+.section-card h3 {
+    margin: 0 0 1rem;
+}
+
+.section-card table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+    margin-top: 1rem;
+}
+
+.section-card th,
+.section-card td {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 0.45rem 0.5rem;
+    text-align: left;
+}
+
+.legend-block {
+    margin-top: 2rem;
+    color: var(--muted-color);
+}
+
+footer {
+    margin-top: 2.5rem;
+    text-align: center;
+    color: rgba(226, 232, 240, 0.7);
+    font-size: 0.95rem;
+}
+
+footer a {
+    color: var(--accent-color);
+    text-decoration: none;
 }
 
 .hidden {
     display: none !important;
-}
-
-.page-title {
-    text-align: center;
-}
-
-.options-heading {
-    margin: 1.5rem 0 0.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-}
-
-#options {
-    margin: 1rem 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    align-items: center;
-}
-
-#options label,
-.theme-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-}
-
-#diagram-title {
-    text-align: center;
-    margin-top: 1rem;
-}
-
-#legend {
-    margin-top: 2rem;
-}
-
-.loading {
-    color: var(--muted-color);
-    font-style: italic;
-    text-align: center;
-}
-
-footer {
-    margin-top: 3rem;
-    font-size: 0.9rem;
-    color: var(--text-color);
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.75rem;
-}
-
-footer a {
-    color: inherit;
-    text-decoration: underline;
-}
-
-footer .powered-by {
-    color: var(--muted-color);
-    flex-basis: 100%;
-    text-align: right;
-    margin-bottom: 0.5rem;
-}
-
-footer .footnote {
-    flex-basis: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-}
-
-footer .footnote-text {
-    font-style: italic;
-    text-align: right;
 }

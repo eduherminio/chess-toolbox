@@ -25,3 +25,6 @@
 - Markdown legends/tables expect HTML-safe strings; always run SAN strings through `mermaid_escape` and `format_sequence` before embedding.
 - Mermaid snippets must stay compact enough for GitHub Pages; keep IDs stable (`N0`, `N1`, …) and avoid inline HTML beyond `<br/>` provided by `format_path_label`.
 - Entry points must stay guarded by `if __name__ == "__main__": raise SystemExit(main())` so Pyodide can `import` modules without triggering CLI behavior.
+
+## Environment
+- Use `python3` whenever running scripts locally to validate data.

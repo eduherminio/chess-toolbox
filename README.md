@@ -5,7 +5,7 @@ Collection of chess-related tools and helpers.
 - CLI version available in [/scripts](/scripts).
 
 
->ℹ️ Disclaimer: _Some of these tools have been generated with AI help, since I'm not a Python experto or someone who enjoys web development._
+>ℹ️ Disclaimer: _Some of these tools have been generated with AI help, since I'm not a Python expert or someone who enjoys web development._
 >_They've been partially 'vibe-coded', so don't treat them as production-ready unless you're willing to 'vibe-debug' them._
 
 ## Repertoire
@@ -55,6 +55,8 @@ options:
 uv run scripts/repertoire-overview.py --pgn-root repertoire
 uv run scripts/repertoire-overview.py --pgn-root repertoire/White_e4 --output white-e4-rep-overview.md
 uv run scripts/pgn-tree.py --pgn-root repertoire --piece-symbols
+
+python3 -m http.server 8000
 ```
 
 Given the following folder structure:

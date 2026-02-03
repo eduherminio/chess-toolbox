@@ -1,336 +1,269 @@
 <!DOCTYPE html>
-<html data-theme="light">
+<html lang="en">
 
 <head>
-  <meta charset="utf-8" />
-  <title>PGN tree visualizer</title>
-  <link rel="stylesheet" href="../tools-shared.css" />
+	<meta charset="utf-8" />
+	<title>PGN tree visualizer</title>
+	<link rel="stylesheet" href="../tools-shared.css" />
 </head>
 
 <body>
-  <div class="page-title">
-    <h1>PGN tree visualizer</h1>
-  </div>
+	<main class="app-shell">
+		<section class="hero">
+			<h1>PGN tree visualizer</h1>
+			<p>Generate a detailed diagram of a PGN file.</p>
+		</section>
 
-  <p id="status" class="loading">Initializing Python and installing python-chess…</p>
+		<section class="panel">
+			<p id="status" class="status-line">Initializing Python and installing python-chess…</p>
+			<div class="file-input-helper">
+				<input type="file" id="pgn-input" accept=".pgn" class="hidden" />
+				<button id="pick-pgn" class="primary-btn" disabled>Select PGN</button>
+			</div>
 
-  <div style="text-align: center;">
-    <input type="file" id="pgn-input" accept=".pgn" class="hidden" />
-  </div>
+			<h2 id="options-heading" class="options-heading hidden">Diagram options</h2>
+			<div id="options" class="controls-grid hidden">
+				<div class="control-item">
+					<label for="side-select">Repertoire side</label>
+					<select id="side-select">
+						<option value="auto" selected>Auto (detect)</option>
+						<option value="white">White</option>
+						<option value="black">Black</option>
+					</select>
+				</div>
+				<div class="control-item">
+					<span class="checkbox-label">
+						<input type="checkbox" id="piece-symbols" checked />
+						Show chess piece symbols
+					</span>
+				</div>
+			</div>
+		</section>
 
-  <p id="options-heading" class="options-heading hidden">Diagram options</p>
+		<section class="panel">
+			<div class="panel-heading">
+				<h2 id="diagram-title" class="hidden"></h2>
+				<button id="download-btn" class="ghost-btn hidden" disabled>Download diagram ⭳</button>
+			</div>
+			<div class="diagram-wrapper">
+				<pre id="diagram" class="mermaid"></pre>
+			</div>
+			<div id="legend" class="legend-block"></div>
+		</section>
 
-  <div id="options" class="hidden">
-    <label>
-      <input type="checkbox" id="piece-symbols" checked />
-      Show chess piece symbols
-    </label>
-    <label>
-      Repertoire side
-      <select id="side-select">
-        <option value="auto" selected>Auto (detect)</option>
-        <option value="white">White</option>
-        <option value="black">Black</option>
-      </select>
-    </label>
-  </div>
-  <br />
+		<footer>
+			Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank" rel="noopener noreferrer">eduherminio/chess-toolbox</a>
+			· Runs entirely in your browser
+		</footer>
+	</main>
 
-  <h2 id="diagram-title" class="hidden"></h2>
+	<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+	<script type="module">
+		import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+		mermaid.initialize({ startOnLoad: false, theme: "neutral" });
 
-  <button id="download-btn" disabled class="hidden">Download ⭳</button>
+		let pyodide;
+		const fileInput = document.getElementById("pgn-input");
+		const pickButton = document.getElementById("pick-pgn");
+		const optionsContainer = document.getElementById("options");
+		const optionsHeading = document.getElementById("options-heading");
+		const pieceSymbolsInput = document.getElementById("piece-symbols");
+		const sideSelect = document.getElementById("side-select");
+		const downloadBtn = document.getElementById("download-btn");
+		const diagramTitle = document.getElementById("diagram-title");
+		const statusLine = document.getElementById("status");
+		const legendDiv = document.getElementById("legend");
+		let lastDiagramSvg = null;
+		let currentDownloadName = "diagram.jpg";
+		let lastDiagramDefinition = "";
+		fileInput.value = "";
 
-  <pre id="diagram" class="mermaid"></pre>
+		pickButton.addEventListener("click", () => fileInput.click());
 
-  <div id="legend"></div>
+		function showUploadControls() {
+			pickButton.disabled = false;
+			optionsContainer.classList.remove("hidden");
+			if (optionsHeading) {
+				optionsHeading.classList.remove("hidden");
+			}
+		}
 
-  <footer>
-    <span class="footnote">
-      <label class="theme-toggle">
-        <input type="checkbox" id="dark-theme" />
-        Dark theme
-      </label>
-      <span class="footnote-text">This tool runs locally in your browser. It's free and anonymous, your PGNs aren't sent anywhere.</span>
-    </span>
-    <span class="powered-by">
-      Powered by <a href="https://github.com/eduherminio/chess-toolbox" target="_blank"
-        rel="noopener noreferrer">eduherminio/chess-toolbox</a>
-    </span>
-  </footer>
+		async function initPython() {
+			pyodide = await loadPyodide({ fullStdLib: false });
+			statusLine.textContent = "Installing python-chess…";
+			await pyodide.loadPackage("micropip");
+			await pyodide.runPythonAsync(`
+				import micropip
+				await micropip.install("chess")
+			`);
 
-  <!-- Pyodide -->
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+			statusLine.textContent = "Loading PGN → Mermaid logic…";
 
-  <!-- Mermaid -->
-  <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-    mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+			const commonCode = await fetch("../scripts/common.py").then(r => r.text());
+			await pyodide.FS.writeFile("common.py", commonCode);
 
-    let pyodide;
-    const fileInput = document.getElementById("pgn-input");
-    const optionsContainer = document.getElementById("options");
-    const optionsHeading = document.getElementById("options-heading");
-    const pieceSymbolsInput = document.getElementById("piece-symbols");
-    const sideSelect = document.getElementById("side-select");
-    const themeToggle = document.getElementById("dark-theme");
-    const downloadBtn = document.getElementById("download-btn");
-    const diagramTitle = document.getElementById("diagram-title");
-    const THEME_STORAGE_KEY = "chess-toolbox-theme";
-    let lastDiagramSvg = null;
-    let currentDownloadName = "diagram.jpg";
-    let lastDiagramDefinition = "";
-    fileInput.value = "";
+			const treeCode = await fetch("../scripts/pgn_tree.py").then(r => r.text());
+			await pyodide.FS.writeFile("pgn_tree.py", treeCode);
 
-    function applyTheme(theme, { persist = true } = {}) {
-      const normalized = theme === "dark" ? "dark" : "light";
-      document.documentElement.dataset.theme = normalized;
-      if (persist) {
-        try {
-          localStorage.setItem(THEME_STORAGE_KEY, normalized);
-        } catch (err) {
-          console.warn("Unable to persist theme", err);
-        }
-      }
-      if (themeToggle) {
-        themeToggle.checked = normalized === "dark";
-      }
-      void rerenderDiagramForTheme();
-    }
+			pyodide.runPython("from pgn_tree import parse_pgn, get_pgn_from_io");
 
-    function initTheme() {
-      let storedTheme = null;
-      try {
-        storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-      } catch (err) {
-        console.warn("Unable to read theme preference", err);
-      }
-      const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const initialTheme = storedTheme || (prefersDark ? "dark" : "light");
-      applyTheme(initialTheme, { persist: false });
-      if (themeToggle) {
-        themeToggle.checked = initialTheme === "dark";
-        themeToggle.addEventListener("change", () => {
-          applyTheme(themeToggle.checked ? "dark" : "light");
-        });
-      }
-    }
+			statusLine.textContent = "Ready. Select a PGN file from your repertoire.";
+			showUploadControls();
+		}
 
-    function showUploadControls() {
-      fileInput.classList.remove("hidden");
-      optionsContainer.classList.remove("hidden");
-      if (optionsHeading) {
-        optionsHeading.classList.remove("hidden");
-      }
-    }
+		initPython();
 
-    initTheme();
+		fileInput.addEventListener("change", async (ev) => {
+			const file = ev.target.files[0];
+			if (!file) return;
 
-    async function initPython() {
-      pyodide = await loadPyodide({ fullStdLib: false });
-      const status = document.getElementById("status");
+			statusLine.textContent = "Parsing PGN and generating diagram…";
+			downloadBtn.disabled = true;
+			downloadBtn.classList.add("hidden");
+			diagramTitle.classList.add("hidden");
+			diagramTitle.textContent = "";
+			legendDiv.innerHTML = "";
+			currentDownloadName = deriveJpgName(file.name || "diagram.pgn");
 
-      // Install python-chess
-      status.textContent = "Installing python-chess…";
-      await pyodide.loadPackage("micropip");
-      await pyodide.runPythonAsync(`
-        import micropip
-        await micropip.install("chess")
-      `);
+			const pgnText = await file.text();
+			const pieceSymbols = pieceSymbolsInput.checked;
+			const sidePreference = sideSelect.value;
 
-      // Load your Python code (common.py + pgn_tree.py)
-      status.textContent = "Loading PGN → Mermaid logic…";
+			const [diagram, legend, sideValue] = pyodide.runPython(`
+		_game = get_pgn_from_io(${JSON.stringify(pgnText)})
+		_diagram, _legend, _side, _origin = parse_pgn(
+				_game,
+				side_preference=${JSON.stringify(sidePreference)},
+				piece_symbols=${pieceSymbols ? "True" : "False"}
+		)
+		(_diagram, _legend, _side.value)
+			`);
 
-      const commonCode = await fetch("../scripts/common.py").then(r => r.text());
-      await pyodide.FS.writeFile("common.py", commonCode);
+			await renderDiagram(diagram);
+			if (lastDiagramSvg) {
+				downloadBtn.disabled = false;
+				downloadBtn.classList.remove("hidden");
+			}
 
-      const treeCode = await fetch("../scripts/pgn_tree.py").then(r => r.text());
-      await pyodide.FS.writeFile("pgn_tree.py", treeCode);
+			if (sideValue) {
+				const prettySide = sideValue.charAt(0).toUpperCase() + sideValue.slice(1);
+				const fileLabel = file.name || "Diagram.pgn";
+				diagramTitle.textContent = `${fileLabel} · ${prettySide} repertoire`;
+				diagramTitle.classList.remove("hidden");
+			}
 
-      // Expose the helper exported by pgn_tree.py
-      pyodide.runPython(`
-      from pgn_tree import parse_pgn, get_pgn_from_io
-        `);
+			legendDiv.innerHTML = markedDownToHtml(legend);
+			statusLine.textContent = "Done.";
+			fileInput.value = "";
+		});
 
-      status.textContent = "Ready. Select a PGN file from your repertoire.";
-      showUploadControls();
-    }
+		downloadBtn.addEventListener("click", async () => {
+			if (!lastDiagramSvg) {
+				return;
+			}
+			const blob = await svgToJpeg(lastDiagramSvg, 3);
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = currentDownloadName;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+		});
 
-    // Run initialization immediately
-    initPython();
+		async function svgToJpeg(svgText, scale = 1) {
+			const viewBoxMatch = svgText.match(/viewBox="([\d.\s-]+)"/);
+			const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
+			return new Promise((resolve, reject) => {
+				const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
+				const url = URL.createObjectURL(svgBlob);
+				const img = new Image();
+				img.onload = () => {
+					const baseWidth = viewBox ? viewBox[2] : img.width;
+					const baseHeight = viewBox ? viewBox[3] : img.height;
+					const canvas = document.createElement("canvas");
+					canvas.width = baseWidth * scale;
+					canvas.height = baseHeight * scale;
+					const ctx = canvas.getContext("2d");
+					ctx.fillStyle = getCanvasBackgroundColor();
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.scale(scale, scale);
+					ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
+					canvas.toBlob((blob) => {
+						if (blob) {
+							resolve(blob);
+						} else {
+							reject(new Error("Could not convert canvas to blob"));
+						}
+						URL.revokeObjectURL(url);
+					}, "image/jpeg", 0.95);
+				};
+				img.onerror = (err) => {
+					URL.revokeObjectURL(url);
+					reject(err);
+				};
+				img.src = url;
+			});
+		}
 
-    // File handling
-    fileInput.addEventListener("change", async (ev) => {
-      const file = ev.target.files[0];
-      if (!file) return;
+		function deriveJpgName(originalName) {
+			if (!originalName) {
+				return "diagram.jpg";
+			}
+			const lastDot = originalName.lastIndexOf(".");
+			const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
+			const safeBase = base.trim() || "diagram";
+			return `${safeBase}.jpg`;
+		}
 
-      const status = document.getElementById("status");
-      status.textContent = "Parsing PGN and generating diagram…";
-      downloadBtn.disabled = true;
-      downloadBtn.classList.add("hidden");
-      diagramTitle.classList.add("hidden");
-      diagramTitle.textContent = "";
-      currentDownloadName = deriveJpgName(file.name || "diagram.pgn");
-      downloadBtn.textContent = "Download ⭳";
+		function getCanvasBackgroundColor() {
+			const styles = getComputedStyle(document.documentElement);
+			const value = styles.getPropertyValue("--canvas-bg").trim();
+			return value || "#0b1121";
+		}
 
-      const pgnText = await file.text();
-      const pieceSymbols = pieceSymbolsInput.checked;
-      const sidePreference = sideSelect.value;
+		async function renderDiagram(definition) {
+			if (!definition) {
+				return;
+			}
+			lastDiagramDefinition = definition;
+			const oldPre = document.getElementById("diagram");
+			const newPre = document.createElement("pre");
+			newPre.id = "diagram";
+			newPre.className = "mermaid";
+			const { svg } = await mermaid.render(`diagram_${Date.now()}`, definition, undefined, { theme: "neutral" });
+			newPre.innerHTML = svg;
+			lastDiagramSvg = svg;
+			oldPre.replaceWith(newPre);
+		}
 
-      const [diagram, legend, sideValue] = pyodide.runPython(`
-    _game = get_pgn_from_io(${JSON.stringify(pgnText)})
-    _diagram, _legend, _side, _origin = parse_pgn(
-        _game,
-        side_preference=${JSON.stringify(sidePreference)},
-        piece_symbols=${pieceSymbols ? "True" : "False"}
-    )
-    (_diagram, _legend, _side.value)
-      `);
+		function markedDownToHtml(md) {
+			md = md
+				.replace(/\|\s*Color\s*\|\s*Meaning\s*\|\s*\n?/gi, "")
+				.replace(/\|\s*-+\s*\|\s*-+\s*\|\s*\n?/g, "");
 
-      // Render mermaid
-      await renderDiagram(diagram);
-      if (lastDiagramSvg) {
-        downloadBtn.disabled = false;
-        downloadBtn.classList.remove("hidden");
-      }
+			let html = md
+				.replace(/^## (.*)$/gm, "<h2>$1</h2>")
+				.replace(/^# (.*)$/gm, "<h1>$1</h1>")
+				.replace(/^\*\*(.+?)\*\*$/gm, "<h3>$1</h3>");
 
-      if (sideValue) {
-        const prettySide = sideValue.charAt(0).toUpperCase() + sideValue.slice(1);
-        const fileLabel = file.name || "Diagram.pgn";
-        diagramTitle.textContent = `${fileLabel} - ${prettySide} repertoire`;
-        diagramTitle.classList.remove("hidden");
-      }
+			html = html.replace(
+				/((?:\|.*\|\n?)+)/g,
+				(tableBlock) => {
+					const rows = tableBlock.trim().split("\n").map(line => {
+						const cells = line.split("|").slice(1, -1).map(c => `<td>${c.trim()}</td>`).join("");
+						return `<tr>${cells}</tr>`;
+					});
+					return `<table>${rows.join("")}</table>`;
+				}
+			);
 
-      // Render legend (as HTML)
-      const legendDiv = document.getElementById("legend");
-      legendDiv.innerHTML = markedDownToHtml(legend);
+			html = html.replace(/(^|\n)([^<\n][^\n]*)/g, "<p>$2</p>");
 
-      status.textContent = "Done.";
-    });
-
-    downloadBtn.addEventListener("click", async () => {
-      if (!lastDiagramSvg) {
-        return;
-      }
-      const blob = await svgToJpeg(lastDiagramSvg, 3);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = currentDownloadName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    });
-
-    async function svgToJpeg(svgText, scale = 1) {
-      const viewBoxMatch = svgText.match(/viewBox="([\d.\s-]+)"/);
-      const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
-      return new Promise((resolve, reject) => {
-        const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
-        const url = URL.createObjectURL(svgBlob);
-        const img = new Image();
-        img.onload = () => {
-          const baseWidth = viewBox ? viewBox[2] : img.width;
-          const baseHeight = viewBox ? viewBox[3] : img.height;
-          const canvas = document.createElement("canvas");
-          canvas.width = baseWidth * scale;
-          canvas.height = baseHeight * scale;
-          const ctx = canvas.getContext("2d");
-          ctx.fillStyle = getCanvasBackgroundColor();
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.scale(scale, scale);
-          ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
-          canvas.toBlob((blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Could not convert canvas to blob"));
-            }
-            URL.revokeObjectURL(url);
-          }, "image/jpeg", 0.95);
-        };
-        img.onerror = (err) => {
-          URL.revokeObjectURL(url);
-          reject(err);
-        };
-        img.src = url;
-      });
-    }
-
-    function deriveJpgName(originalName) {
-      if (!originalName) {
-        return "diagram.jpg";
-      }
-      const lastDot = originalName.lastIndexOf(".");
-      const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
-      const safeBase = base.trim() || "diagram";
-      return `${safeBase}.jpg`;
-    }
-
-    function getCanvasBackgroundColor() {
-      const styles = getComputedStyle(document.documentElement);
-      const value = styles.getPropertyValue("--canvas-bg").trim();
-      return value || "#ffffff";
-    }
-
-    function getMermaidTheme() {
-      return document.documentElement.dataset.theme === "dark" ? "dark" : "neutral";
-    }
-
-    async function renderDiagram(definition) {
-      if (!definition) {
-        return;
-      }
-      lastDiagramDefinition = definition;
-      const oldPre = document.getElementById("diagram");
-      const newPre = document.createElement("pre");
-      newPre.id = "diagram";
-      newPre.className = "mermaid";
-      const { svg } = await mermaid.render(`diagram_${Date.now()}`, definition, undefined, { theme: getMermaidTheme() });
-      newPre.innerHTML = svg;
-      lastDiagramSvg = svg;
-      oldPre.replaceWith(newPre);
-    }
-
-    async function rerenderDiagramForTheme() {
-      if (!lastDiagramDefinition) {
-        return;
-      }
-      await renderDiagram(lastDiagramDefinition);
-    }
-
-    // Very tiny markdown-to-HTML helper (only headings + tables + paragraphs)
-    function markedDownToHtml(md) {
-      // Remove table headers we do not need
-      md = md
-        .replace(/\|\s*Color\s*\|\s*Meaning\s*\|\s*\n?/gi, "")
-        .replace(/\|\s*-+\s*\|\s*-+\s*\|\s*\n?/g, "");
-
-      // Replace headings
-      let html = md
-        .replace(/^## (.*)$/gm, "<h2>$1</h2>")
-        .replace(/^# (.*)$/gm, "<h1>$1</h1>")
-        .replace(/^\*\*(.+?)\*\*$/gm, "<h3>$1</h3>");
-
-      // Replace table pipes with <table> (simple case)
-      // Minimal parser: treat consecutive table lines as a block
-      html = html.replace(
-        /((?:\|.*\|\n?)+)/g,
-        (tableBlock) => {
-          const rows = tableBlock.trim().split("\n").map(line => {
-            const cells = line.split("|").slice(1, -1).map(c => `<td>${c.trim()}</td>`).join("");
-            return `<tr>${cells}</tr>`;
-          });
-          return `<table>${rows.join("")}</table>`;
-        }
-      );
-
-      // Paragraphs
-      html = html.replace(/(^|\n)([^<\n][^\n]*)/g, "<p>$2</p>");
-
-      return html;
-    }
-  </script>
+			return html;
+		}
+	</script>
 </body>
 
 </html>
