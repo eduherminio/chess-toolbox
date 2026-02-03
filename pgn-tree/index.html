@@ -44,6 +44,7 @@
 			<div class="panel-heading">
 				<h2 id="diagram-title" class="hidden"></h2>
 				<div class="download-actions">
+					<button id="diagram-theme-btn" class="ghost-btn hidden" disabled>Light diagram background ☀</button>
 					<button id="download-markdown-btn" class="ghost-btn hidden" disabled>Download markdown ⭳</button>
 					<button id="download-image-btn" class="ghost-btn hidden" disabled>Download image ⭳</button>
 				</div>
@@ -74,6 +75,7 @@
 		const sideSelect = document.getElementById("side-select");
 		const downloadMarkdownBtn = document.getElementById("download-markdown-btn");
 		const downloadImageBtn = document.getElementById("download-image-btn");
+		const diagramThemeBtn = document.getElementById("diagram-theme-btn");
 		const diagramTitle = document.getElementById("diagram-title");
 		const statusLine = document.getElementById("status");
 		const legendDiv = document.getElementById("legend");
@@ -83,7 +85,14 @@
 		let lastMarkdown = "";
 		let currentMarkdownName = "diagram.md";
 		let currentDiagramTitle = "";
+		const DiagramThemes = Object.freeze({ DARK: "dark", LIGHT: "light" });
+		const DiagramThemeConfig = Object.freeze({
+			[DiagramThemes.DARK]: { background: "#0b1121" },
+			[DiagramThemes.LIGHT]: { background: "#ffffff" },
+		});
+		let currentDiagramTheme = DiagramThemes.DARK;
 		fileInput.value = "";
+		applyDiagramTheme(DiagramThemes.DARK);
 
 		pickButton.addEventListener("click", () => fileInput.click());
 
@@ -129,6 +138,8 @@
 			downloadImageBtn.classList.add("hidden");
 			downloadMarkdownBtn.disabled = true;
 			downloadMarkdownBtn.classList.add("hidden");
+			diagramThemeBtn.disabled = true;
+			diagramThemeBtn.classList.add("hidden");
 			diagramTitle.classList.add("hidden");
 			diagramTitle.textContent = "";
 			legendDiv.innerHTML = "";
@@ -156,13 +167,15 @@
 			if (lastDiagramSvg) {
 				downloadImageBtn.disabled = false;
 				downloadImageBtn.classList.remove("hidden");
+				diagramThemeBtn.disabled = false;
+				diagramThemeBtn.classList.remove("hidden");
 			}
 
 			const fileLabel = file.name || "Diagram.pgn";
 			currentDiagramTitle = fileLabel;
 			if (sideValue) {
 				const prettySide = sideValue.charAt(0).toUpperCase() + sideValue.slice(1);
-				currentDiagramTitle = `${fileLabel} · ${prettySide} repertoire`;
+				currentDiagramTitle = `${fileLabel} - ${prettySide} repertoire`;
 				diagramTitle.textContent = currentDiagramTitle;
 				diagramTitle.classList.remove("hidden");
 			}
@@ -197,7 +210,8 @@
 			if (!lastMarkdown) {
 				return;
 			}
-			const blob = new Blob([lastMarkdown], { type: "text/markdown" });
+			const themedMarkdown = applyDiagramThemeToMarkdown(lastMarkdown, currentDiagramTheme);
+			const blob = new Blob([themedMarkdown], { type: "text/markdown" });
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
@@ -206,6 +220,11 @@
 			link.click();
 			document.body.removeChild(link);
 			URL.revokeObjectURL(url);
+		});
+
+		diagramThemeBtn.addEventListener("click", () => {
+			const nextTheme = currentDiagramTheme === DiagramThemes.DARK ? DiagramThemes.LIGHT : DiagramThemes.DARK;
+			applyDiagramTheme(nextTheme);
 		});
 
 		async function svgToJpeg(svgText, scale = 1) {
@@ -279,7 +298,8 @@
 		}
 
 		function getCanvasBackgroundColor() {
-			const styles = getComputedStyle(document.documentElement);
+			const host = document.body || document.documentElement;
+			const styles = getComputedStyle(host);
 			const value = styles.getPropertyValue("--canvas-bg").trim();
 			return value || "#0b1121";
 		}
@@ -322,6 +342,45 @@
 			html = html.replace(/(^|\n)([^<\n][^\n]*)/g, "<p>$2</p>");
 
 			return html;
+		}
+
+		function applyDiagramTheme(theme) {
+			const normalizedTheme = theme === DiagramThemes.LIGHT ? DiagramThemes.LIGHT : DiagramThemes.DARK;
+			currentDiagramTheme = normalizedTheme;
+			if (document.body) {
+				document.body.dataset.diagramTheme = normalizedTheme;
+			}
+			if (diagramThemeBtn) {
+				diagramThemeBtn.textContent = normalizedTheme === DiagramThemes.LIGHT
+					? "Dark theme ◐"
+					: "Light theme ☀";
+			}
+		}
+
+		function applyDiagramThemeToMarkdown(markdown, theme) {
+			if (!markdown) {
+				return markdown;
+			}
+			const initLine = buildMermaidInitDirective(theme);
+			return markdown.replace(/```mermaid\s*\n([\s\S]*?)```/g, (match, inner) => {
+				const sanitized = inner
+					.replace(/^\s*%%\{init:[\s\S]*?%%\s*/i, "")
+					.replace(/^\n+/, "");
+				const body = sanitized.replace(/\s+$/, "");
+				const newline = body.endsWith("\n") ? "" : "\n";
+				return "```mermaid\n" + initLine + "\n" + body + newline + "```\n";
+			});
+		}
+
+		function buildMermaidInitDirective(theme) {
+			const config = DiagramThemeConfig[theme] || DiagramThemeConfig[DiagramThemes.DARK];
+			const payload = {
+				theme: "neutral",
+				themeVariables: {
+					background: config.background,
+				},
+			};
+			return `%%{init: ${JSON.stringify(payload)}}%%`;
 		}
 	</script>
 </body>

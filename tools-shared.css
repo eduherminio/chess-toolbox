@@ -9,6 +9,14 @@
     --accent-glow: rgba(56, 189, 248, 0.35);
     --shadow-color: rgba(1, 5, 16, 0.65);
     --canvas-bg: #0b1121;
+    --diagram-surface: rgba(4, 8, 18, 0.85);
+    --diagram-border: rgba(148, 163, 184, 0.4);
+}
+
+[data-diagram-theme="light"] {
+    --diagram-surface: #ffffff;
+    --diagram-border: rgba(15, 23, 42, 0.18);
+    --canvas-bg: #ffffff;
 }
 
 body {
@@ -171,8 +179,8 @@ select {
 }
 
 .diagram-wrapper {
-    background: rgba(4, 8, 18, 0.85);
-    border: 1px solid var(--border-color);
+    background: var(--diagram-surface);
+    border: 1px solid var(--diagram-border);
     border-radius: 20px;
     padding: 1.25rem;
     overflow: auto;
@@ -184,11 +192,20 @@ select {
 
 .panel-heading {
     display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
     margin-bottom: 1rem;
+}
+
+.panel-heading h2 {
+    margin: 0;
+}
+
+.download-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
 .sections-stack {
