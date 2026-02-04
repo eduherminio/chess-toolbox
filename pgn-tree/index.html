@@ -44,15 +44,12 @@
 			<div class="panel-heading">
 				<h2 id="diagram-title" class="hidden"></h2>
 				<div class="download-actions">
+					<button id="download-all-images-btn" class="ghost-btn hidden" disabled>Download all images ⭳</button>
+					<button id="download-all-markdown-btn" class="ghost-btn hidden" disabled>Download all markdown ⭳</button>
 					<button id="diagram-theme-btn" class="ghost-btn hidden" disabled>Light diagram background ☀</button>
-					<button id="download-markdown-btn" class="ghost-btn hidden" disabled>Download markdown ⭳</button>
-					<button id="download-image-btn" class="ghost-btn hidden" disabled>Download image ⭳</button>
 				</div>
 			</div>
-			<div class="diagram-wrapper">
-				<pre id="diagram" class="mermaid"></pre>
-			</div>
-			<div id="legend" class="legend-block"></div>
+			<div id="diagram-collection" class="sections-stack"></div>
 		</section>
 
 		<footer>
@@ -73,18 +70,14 @@
 		const optionsHeading = document.getElementById("options-heading");
 		const pieceSymbolsInput = document.getElementById("piece-symbols");
 		const sideSelect = document.getElementById("side-select");
-		const downloadMarkdownBtn = document.getElementById("download-markdown-btn");
-		const downloadImageBtn = document.getElementById("download-image-btn");
+		const downloadAllImagesBtn = document.getElementById("download-all-images-btn");
+		const downloadAllMarkdownBtn = document.getElementById("download-all-markdown-btn");
 		const diagramThemeBtn = document.getElementById("diagram-theme-btn");
 		const diagramTitle = document.getElementById("diagram-title");
 		const statusLine = document.getElementById("status");
-		const legendDiv = document.getElementById("legend");
-		let lastDiagramSvg = null;
-		let currentImageName = "diagram.jpg";
-		let lastLegendMarkdown = "";
-		let lastMarkdown = "";
-		let currentMarkdownName = "diagram.md";
-		let currentDiagramTitle = "";
+		const diagramCollection = document.getElementById("diagram-collection");
+		let renderedDiagrams = [];
+		let diagramCounter = 0;
 		const DiagramThemes = Object.freeze({ DARK: "dark", LIGHT: "light" });
 		const DiagramThemeConfig = Object.freeze({
 			[DiagramThemes.DARK]: { background: "#0b1121" },
@@ -121,7 +114,7 @@
 			const treeCode = await fetch("../scripts/pgn_tree.py").then(r => r.text());
 			await pyodide.FS.writeFile("pgn_tree.py", treeCode);
 
-			pyodide.runPython("from pgn_tree import parse_pgn, get_pgn_from_io");
+			pyodide.runPython("from pgn_tree import parse_pgn_collection");
 
 			statusLine.textContent = "Ready. Select a PGN file from your repertoire.";
 			showUploadControls();
@@ -133,94 +126,69 @@
 			const file = ev.target.files[0];
 			if (!file) return;
 
-			statusLine.textContent = "Parsing PGN and generating diagram…";
-			downloadImageBtn.disabled = true;
-			downloadImageBtn.classList.add("hidden");
-			downloadMarkdownBtn.disabled = true;
-			downloadMarkdownBtn.classList.add("hidden");
-			diagramThemeBtn.disabled = true;
-			diagramThemeBtn.classList.add("hidden");
-			diagramTitle.classList.add("hidden");
-			diagramTitle.textContent = "";
-			legendDiv.innerHTML = "";
-			currentImageName = deriveJpgName(file.name || "diagram.pgn");
-			currentMarkdownName = deriveMarkdownName(file.name || "diagram.pgn");
-			lastMarkdown = "";
-			lastLegendMarkdown = "";
-			currentDiagramTitle = "";
-
+			statusLine.textContent = "Parsing PGN games and generating diagrams…";
+			clearRenderedDiagrams();
 			const pgnText = await file.text();
 			const pieceSymbols = pieceSymbolsInput.checked;
 			const sidePreference = sideSelect.value;
 
-			const [diagram, legend, sideValue] = pyodide.runPython(`
-		_game = get_pgn_from_io(${JSON.stringify(pgnText)})
-		_diagram, _legend, _side, _origin = parse_pgn(
-				_game,
-				side_preference=${JSON.stringify(sidePreference)},
-				piece_symbols=${pieceSymbols ? "True" : "False"}
-		)
-		(_diagram, _legend, _side.value)
-			`);
-
-			await renderDiagram(diagram);
-			if (lastDiagramSvg) {
-				downloadImageBtn.disabled = false;
-				downloadImageBtn.classList.remove("hidden");
-				diagramThemeBtn.disabled = false;
-				diagramThemeBtn.classList.remove("hidden");
+			try {
+				const pyResult = pyodide.runPython(`
+from pgn_tree import parse_pgn_collection
+parse_pgn_collection(
+	${JSON.stringify(pgnText)},
+	side_preference=${JSON.stringify(sidePreference)},
+	piece_symbols=${pieceSymbols ? "True" : "False"}
+)
+				`);
+				const pyEntries = pyResult.toJs({
+					deep: true,
+					dict_converter: (pyDict) => Object.fromEntries(pyDict),
+				});
+				const parsedEntries = Array.isArray(pyEntries) ? pyEntries : Array.from(pyEntries || []);
+				await renderDiagramCollection(parsedEntries, file.name || "Diagram.pgn");
+				if (pyEntries && typeof pyEntries.destroy === "function") {
+					pyEntries.destroy();
+				}
+				if (pyResult && typeof pyResult.destroy === "function") {
+					pyResult.destroy();
+				}
+				statusLine.textContent = "Done.";
+			} catch (err) {
+				console.error(err);
+				statusLine.textContent = `Something went wrong: ${err.message}`;
+			} finally {
+				fileInput.value = "";
 			}
-
-			const fileLabel = file.name || "Diagram.pgn";
-			currentDiagramTitle = fileLabel;
-			if (sideValue) {
-				const prettySide = sideValue.charAt(0).toUpperCase() + sideValue.slice(1);
-				currentDiagramTitle = `${fileLabel} - ${prettySide} repertoire`;
-				diagramTitle.textContent = currentDiagramTitle;
-				diagramTitle.classList.remove("hidden");
-			}
-			lastLegendMarkdown = legend || "";
-			lastMarkdown = buildDiagramMarkdown(currentDiagramTitle, diagram, lastLegendMarkdown);
-			if (lastMarkdown) {
-				downloadMarkdownBtn.disabled = false;
-				downloadMarkdownBtn.classList.remove("hidden");
-			}
-
-			legendDiv.innerHTML = markedDownToHtml(legend);
-			statusLine.textContent = "Done.";
-			fileInput.value = "";
 		});
 
-		downloadImageBtn.addEventListener("click", async () => {
-			if (!lastDiagramSvg) {
-				return;
-			}
-			const blob = await svgToJpeg(lastDiagramSvg, 3);
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = currentImageName;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			URL.revokeObjectURL(url);
-		});
+		if (downloadAllImagesBtn) {
+			downloadAllImagesBtn.addEventListener("click", async () => {
+				if (!renderedDiagrams.length) {
+					return;
+				}
+				downloadAllImagesBtn.disabled = true;
+				try {
+					await downloadAllDiagramImages();
+				} finally {
+					downloadAllImagesBtn.disabled = false;
+				}
+			});
+		}
 
-		downloadMarkdownBtn.addEventListener("click", () => {
-			if (!lastMarkdown) {
-				return;
-			}
-			const themedMarkdown = applyDiagramThemeToMarkdown(lastMarkdown, currentDiagramTheme);
-			const blob = new Blob([themedMarkdown], { type: "text/markdown" });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = currentMarkdownName;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			URL.revokeObjectURL(url);
-		});
+		if (downloadAllMarkdownBtn) {
+			downloadAllMarkdownBtn.addEventListener("click", () => {
+				if (!renderedDiagrams.length) {
+					return;
+				}
+				downloadAllMarkdownBtn.disabled = true;
+				try {
+					downloadAllDiagramMarkdowns();
+				} finally {
+					downloadAllMarkdownBtn.disabled = false;
+				}
+			});
+		}
 
 		diagramThemeBtn.addEventListener("click", () => {
 			const nextTheme = currentDiagramTheme === DiagramThemes.DARK ? DiagramThemes.LIGHT : DiagramThemes.DARK;
@@ -258,24 +226,246 @@
 			});
 		}
 
-		function deriveJpgName(originalName) {
+		function getSafeBaseName(originalName) {
 			if (!originalName) {
-				return "diagram.jpg";
+				return "diagram";
 			}
 			const lastDot = originalName.lastIndexOf(".");
 			const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
 			const safeBase = base.trim() || "diagram";
-			return `${safeBase}.jpg`;
+			return safeBase.replace(/[^a-z0-9]+/gi, "_");
 		}
 
-		function deriveMarkdownName(originalName) {
-			if (!originalName) {
-				return "diagram.md";
+		function deriveJpgName(originalName, slug) {
+			const base = getSafeBaseName(originalName);
+			const suffix = slug ? `_${slug}` : "";
+			return `${base}${suffix}.jpg`;
+		}
+
+		function deriveMarkdownName(originalName, slug) {
+			const base = getSafeBaseName(originalName);
+			const suffix = slug ? `_${slug}` : "";
+			return `${base}${suffix}_diagram.md`;
+		}
+
+		function clearRenderedDiagrams() {
+			renderedDiagrams = [];
+			diagramCounter = 0;
+			diagramCollection.innerHTML = "";
+			diagramTitle.textContent = "";
+			diagramTitle.classList.add("hidden");
+			diagramThemeBtn.disabled = true;
+			diagramThemeBtn.classList.add("hidden");
+			if (downloadAllImagesBtn) {
+				downloadAllImagesBtn.disabled = true;
+				downloadAllImagesBtn.classList.add("hidden");
 			}
-			const lastDot = originalName.lastIndexOf(".");
-			const base = lastDot > 0 ? originalName.slice(0, lastDot) : originalName;
-			const safeBase = base.trim() || "diagram";
-			return `${safeBase}_diagram.md`;
+			if (downloadAllMarkdownBtn) {
+				downloadAllMarkdownBtn.disabled = true;
+				downloadAllMarkdownBtn.classList.add("hidden");
+			}
+		}
+
+		async function renderDiagramCollection(entries, originalName) {
+			if (!Array.isArray(entries) || !entries.length) {
+				statusLine.textContent = "No games were found in that PGN.";
+				return;
+			}
+			const fileLabel = originalName || "Diagram.pgn";
+			const isSingleDiagram = entries.length === 1;
+			if (isSingleDiagram) {
+				diagramTitle.textContent = fileLabel;
+			} else {
+				diagramTitle.textContent = `${fileLabel} (${entries.length} games)`;
+			}
+			diagramTitle.classList.remove("hidden");
+			diagramThemeBtn.disabled = false;
+			diagramThemeBtn.classList.remove("hidden");
+			if (downloadAllImagesBtn) {
+				if (isSingleDiagram) {
+					downloadAllImagesBtn.disabled = true;
+					downloadAllImagesBtn.classList.add("hidden");
+				} else {
+					downloadAllImagesBtn.disabled = false;
+					downloadAllImagesBtn.classList.remove("hidden");
+				}
+			}
+			if (downloadAllMarkdownBtn) {
+				if (isSingleDiagram) {
+					downloadAllMarkdownBtn.disabled = true;
+					downloadAllMarkdownBtn.classList.add("hidden");
+				} else {
+					downloadAllMarkdownBtn.disabled = false;
+					downloadAllMarkdownBtn.classList.remove("hidden");
+				}
+			}
+
+			for (let idx = 0; idx < entries.length; idx += 1) {
+				// eslint-disable-next-line no-await-in-loop
+				await renderDiagramCard(entries[idx], idx, fileLabel, isSingleDiagram);
+			}
+		}
+
+		function slugifyLabel(value, idx) {
+			const normalized = (value || "").toString().toLowerCase().trim();
+			const slug = normalized.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+			return slug || `game_${idx + 1}`;
+		}
+
+		async function renderDiagramCard(entry, idx, originalName, suppressHeading = false) {
+			const entryData = entry || {};
+			const safeTitle = (entryData.title && entryData.title.trim()) || `Game ${idx + 1}`;
+			const slug = entryData.slug ? entryData.slug.trim() : slugifyLabel(safeTitle, idx);
+			const section = document.createElement("section");
+			section.className = "section-card";
+			diagramCollection.appendChild(section);
+
+			if (!suppressHeading) {
+				const heading = document.createElement("h3");
+				heading.textContent = safeTitle;
+				section.appendChild(heading);
+			}
+
+			const sideLabel = formatSideLabel(entryData.side);
+			const originLabel = entryData.origin || "starting position";
+			const subtitle = document.createElement("h3");
+			subtitle.textContent = sideLabel
+				? `${sideLabel} repertoire from ${originLabel}`
+				: `Origin: ${originLabel}`;
+			section.appendChild(subtitle);
+
+			const actions = document.createElement("div");
+			actions.className = "download-actions";
+			section.appendChild(actions);
+
+			diagramCounter += 1;
+			const entryId = `diagram-${diagramCounter}`;
+			const downloadImageButton = document.createElement("button");
+			downloadImageButton.className = "ghost-btn";
+			downloadImageButton.textContent = "Download image ⭳";
+			actions.appendChild(downloadImageButton);
+
+			const downloadMarkdownButton = document.createElement("button");
+			downloadMarkdownButton.className = "ghost-btn";
+			downloadMarkdownButton.textContent = "Download markdown ⭳";
+			actions.appendChild(downloadMarkdownButton);
+
+			const diagramWrapper = document.createElement("div");
+			diagramWrapper.className = "diagram-wrapper";
+			section.appendChild(diagramWrapper);
+
+			const pre = document.createElement("pre");
+			pre.className = "mermaid";
+			pre.id = entryId;
+			diagramWrapper.appendChild(pre);
+
+			const legendMarkdown = (entryData.legend || "").trim();
+			if (legendMarkdown) {
+				const legendBlock = document.createElement("div");
+				legendBlock.className = "legend-block";
+				legendBlock.innerHTML = markedDownToHtml(legendMarkdown);
+				section.appendChild(legendBlock);
+			}
+
+			const definition = entryData.diagram || "flowchart TD\nA[No moves]";
+			const svg = await renderMermaidDefinition(entryId, definition);
+
+			const cardTitle = buildCardTitle(safeTitle, sideLabel, originLabel);
+			const entryState = {
+				id: entryId,
+				title: safeTitle,
+				slug,
+				imageName: deriveJpgName(originalName, slug),
+				markdownName: deriveMarkdownName(originalName, slug),
+				diagramDefinition: definition,
+				legendMarkdown,
+				svg,
+				markdown: buildDiagramMarkdown(cardTitle, definition, legendMarkdown),
+			};
+			renderedDiagrams.push(entryState);
+
+			downloadImageButton.addEventListener("click", async () => {
+				await downloadDiagramImage(entryId);
+			});
+			downloadMarkdownButton.addEventListener("click", () => downloadDiagramMarkdown(entryId));
+		}
+
+		function formatSideLabel(sideValue) {
+			if (!sideValue) {
+				return "";
+			}
+			const normalized = sideValue.toString().trim().toLowerCase();
+			if (!normalized) {
+				return "";
+			}
+			return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+		}
+
+		function buildCardTitle(gameTitle, sideLabel, originLabel) {
+			if (sideLabel && originLabel) {
+				return `${gameTitle} - ${sideLabel} repertoire from ${originLabel}`;
+			}
+			if (sideLabel) {
+				return `${gameTitle} - ${sideLabel} repertoire`;
+			}
+			return gameTitle;
+		}
+
+		function findRenderedDiagram(entryId) {
+			return renderedDiagrams.find((entry) => entry.id === entryId);
+		}
+
+		async function downloadDiagramImage(entryId) {
+			const entry = findRenderedDiagram(entryId);
+			if (!entry || !entry.svg) {
+				return;
+			}
+			const blob = await svgToJpeg(entry.svg, 3);
+			triggerBlobDownload(blob, entry.imageName);
+		}
+
+		function downloadDiagramMarkdown(entryId) {
+			const entry = findRenderedDiagram(entryId);
+			if (!entry || !entry.markdown) {
+				return;
+			}
+			const themedMarkdown = applyDiagramThemeToMarkdown(entry.markdown, currentDiagramTheme);
+			triggerTextDownload(themedMarkdown, entry.markdownName);
+		}
+
+		async function downloadAllDiagramImages() {
+			for (const entry of renderedDiagrams) {
+				if (!entry || !entry.id) {
+					continue;
+				}
+				// eslint-disable-next-line no-await-in-loop
+				await downloadDiagramImage(entry.id);
+			}
+		}
+
+		function downloadAllDiagramMarkdowns() {
+			for (const entry of renderedDiagrams) {
+				if (!entry || !entry.id) {
+					continue;
+				}
+				downloadDiagramMarkdown(entry.id);
+			}
+		}
+
+		function triggerBlobDownload(blob, filename) {
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = filename;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+		}
+
+		function triggerTextDownload(text, filename) {
+			const blob = new Blob([text], { type: "text/markdown" });
+			triggerBlobDownload(blob, filename);
 		}
 
 		function buildDiagramMarkdown(title, diagramDefinition, legendMarkdown) {
@@ -289,6 +479,7 @@
 			if (legendMarkdown && legendMarkdown.trim()) {
 				parts.push(legendMarkdown.trim());
 			}
+			parts.push("> Source: eduherminio/chess-toolbox");
 			const content = parts.join("\n\n").trim();
 			return content ? `${content}\n` : "";
 		}
@@ -300,31 +491,30 @@
 			return value || "#0b1121";
 		}
 
-		async function renderDiagram(definition) {
-			if (!definition) {
-				return;
+		async function renderMermaidDefinition(elementId, definition) {
+			const target = document.getElementById(elementId);
+			if (!target || !definition) {
+				return "";
 			}
-			const oldPre = document.getElementById("diagram");
-			const newPre = document.createElement("pre");
-			newPre.id = "diagram";
-			newPre.className = "mermaid";
-			const { svg } = await mermaid.render(`diagram_${Date.now()}`, definition, undefined, { theme: "neutral" });
-			newPre.innerHTML = svg;
-			lastDiagramSvg = svg;
-			oldPre.replaceWith(newPre);
+			const { svg } = await mermaid.render(`diagram_${elementId}_${Date.now()}`, definition, undefined, { theme: "neutral" });
+			target.innerHTML = svg;
+			return svg;
 		}
 
 		function markedDownToHtml(md) {
-			md = md
+			if (!md) {
+				return "";
+			}
+			let normalized = md
 				.replace(/\|\s*Color\s*\|\s*Meaning\s*\|\s*\n?/gi, "")
 				.replace(/\|\s*-+\s*\|\s*-+\s*\|\s*\n?/g, "");
 
-			let html = md
+			normalized = normalized
 				.replace(/^## (.*)$/gm, "<h2>$1</h2>")
 				.replace(/^# (.*)$/gm, "<h1>$1</h1>")
 				.replace(/^\*\*(.+?)\*\*$/gm, "<h3>$1</h3>");
 
-			html = html.replace(
+			normalized = normalized.replace(
 				/((?:\|.*\|\n?)+)/g,
 				(tableBlock) => {
 					const rows = tableBlock.trim().split("\n").map(line => {
@@ -335,9 +525,7 @@
 				}
 			);
 
-			html = html.replace(/(^|\n)([^<\n][^\n]*)/g, "<p>$2</p>");
-
-			return html;
+			return normalized.replace(/(^|\n)([^<\n][^\n]*)/g, "<p>$2</p>");
 		}
 
 		function applyDiagramTheme(theme) {

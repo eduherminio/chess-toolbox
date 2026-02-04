@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 AUTO_SIDE_SAMPLE_MAX_PLY = 40
 
@@ -124,11 +125,17 @@ def safe_relative(path: Path, base: Path | None) -> str:
 
 
 def format_path_label(rel_path: str) -> str:
-    parts = Path(rel_path).parts
-    if not parts:
-        return rel_path
+    meta_label = ""
+    base_path = rel_path
+    if "::" in rel_path:
+        base_path, meta_label = rel_path.split("::", 1)
+    base_path = base_path or rel_path
+    parts = Path(base_path).parts or (base_path,)
     lines = [f"{segment}/" for segment in parts[:-1]]
     lines.append(parts[-1])
+    meta_label = meta_label.strip()
+    if meta_label:
+        lines.append(meta_label)
     return "<br/>".join(lines)
 
 
@@ -140,3 +147,32 @@ def requires_startpos_root(node: Any) -> bool:
         return len(children) > 1
     except TypeError:  # pragma: no cover - non-sized iterables
         return True
+
+
+_SLUG_REGEX = re.compile(r"[^a-z0-9]+")
+
+
+def slugify(value: str) -> str:
+    normalized = value.strip().lower()
+    slug = _SLUG_REGEX.sub("_", normalized)
+    return slug.strip("_")
+
+
+def describe_game_from_headers(headers: Mapping[str, str], fallback_index: int) -> tuple[str, str]:
+    event = headers.get("Event", "").strip()
+    opening = headers.get("Opening", "").strip()
+
+    title = ""
+    if event:
+        title = event
+    elif opening:
+        title = opening
+
+    if not title:
+        title = f"Game {fallback_index}"
+
+    slug_source = title or f"game_{fallback_index}"
+    slug = slugify(slug_source)
+    if not slug:
+        slug = f"game_{fallback_index}"
+    return title, slug

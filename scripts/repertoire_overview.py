@@ -13,6 +13,7 @@ from common import (
     BranchingStats,
     RepertoireSide,
     decide_side_from_stats,
+    describe_game_from_headers,
     format_path_label,
     format_sequence,
     format_single_move,
@@ -39,7 +40,7 @@ class OpeningNode:
         self.ply = ply
         self.sequence = sequence
         self.children: dict[str, OpeningNode] = {}
-        self.sources: set[str] = set()
+        self.sources: set[SourceRef] = set()
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ class DiagramNode:
     id: str
     label: str
     sequence: tuple[str, ...]
-    sources: Sequence[str]
+    sources: Sequence[SourceRef]
     kind: str = "move"
 
 
@@ -58,11 +59,19 @@ class DiagramEdge:
     label: str
 
 
+@dataclass(frozen=True, order=True)
+class SourceRef:
+    path: str
+    identifier: str
+    event: str = ""
+    multi_file: bool = False
+
+
 @dataclass
 class RepertoireBucket:
     root_label: str
     root: OpeningNode
-    sources: set[str]
+    sources: set[SourceRef]
 
 
 @dataclass
@@ -71,7 +80,7 @@ class DiagramSection:
     side: RepertoireSide
     nodes: Sequence[DiagramNode]
     edges: Sequence[DiagramEdge]
-    sources: Sequence[str]
+    sources: Sequence[SourceRef]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -122,22 +131,28 @@ def collect_branching_stats_from_game(game: chess.pgn.Game) -> dict[int, Branchi
     return stats
 
 
-def read_main_line(path: Path) -> tuple[list[str], str | None, dict[str, str], dict[int, BranchingStats]]:
-    with path.open(encoding="utf-8") as handle:
-        game = chess.pgn.read_game(handle)
-    if game is None:
-        return [], None, {}, {0: BranchingStats(), 1: BranchingStats()}
+def extract_main_line(game: chess.pgn.Game) -> tuple[list[str], str | None, dict[str, str]]:
     board = game.board()
     moves: list[str] = []
     for move in game.mainline_moves():
         san = board.san(move)
         moves.append(san)
         board.push(move)
-    stats = collect_branching_stats_from_game(game)
-    return moves, game.headers.get("FEN"), dict(game.headers), stats
+    return moves, game.headers.get("FEN"), dict(game.headers)
 
 
-def add_line(root: OpeningNode, moves: Iterable[str], source: str) -> None:
+def iter_games_from_file(path: Path) -> Iterable[tuple[int, chess.pgn.Game]]:
+    with path.open(encoding="utf-8") as handle:
+        index = 1
+        while True:
+            game = chess.pgn.read_game(handle)
+            if game is None:
+                break
+            yield index, game
+            index += 1
+
+
+def add_line(root: OpeningNode, moves: Iterable[str], source: SourceRef) -> None:
     root.sources.add(source)
     node = root
     for ply, move in enumerate(moves, start=1):
@@ -160,15 +175,6 @@ def ensure_bucket(
         bucket = RepertoireBucket(root_label=root_label, root=OpeningNode(), sources=set())
         buckets[(root_key, side)] = bucket
     return bucket
-
-
-def infer_section_label(headers: dict[str, str], default_label: str) -> str:
-    tag = headers.get("RepertoireGroup") or headers.get("Group")
-    if tag:
-        candidate = tag.strip()
-        if candidate:
-            return candidate
-    return default_label
 
 
 def build_diagram(
@@ -232,18 +238,30 @@ def build_diagram(
     def attach_path_block(node: OpeningNode, source_id: str) -> None:
         if not node.sources:
             return
-        for path_label in sorted(node.sources):
-            cache_key = (node, path_label)
+        grouped: dict[str, list[SourceRef]] = {}
+        for ref in node.sources:
+            grouped.setdefault(ref.path, []).append(ref)
+        for path_value in sorted(grouped):
+            cache_key = (node, path_value)
             path_node_id = path_nodes_cache.get(cache_key)
             if path_node_id is None:
-                file_label = format_path_label(path_label)
+                refs_for_path = grouped[path_value]
+                file_label = format_path_label(path_value)
+                if any(ref.multi_file for ref in refs_for_path):
+                    event_entries = sorted({(ref.event or "").strip() for ref in refs_for_path if (ref.event or "").strip()})
+                    if event_entries:
+                        if len(event_entries) == 1:
+                            file_label = f"{file_label}<br/>Event: {event_entries[0]}"
+                        else:
+                            event_lines = "<br/>".join(f"- {entry}" for entry in event_entries)
+                            file_label = f"{file_label}<br/>Events:<br/>{event_lines}"
                 path_node_id = next_node_id()
                 nodes.append(
                     DiagramNode(
                         id=path_node_id,
                         label=file_label,
                         sequence=node.sequence,
-                        sources=(path_label,),
+                        sources=tuple(sorted(refs_for_path)),
                         kind="path",
                     )
                 )
@@ -344,7 +362,14 @@ def render_table(nodes: Sequence[DiagramNode], use_piece_symbols: bool = False) 
             continue
         sequence = format_sequence(node.sequence, use_piece_symbols=use_piece_symbols)
         if node.sources:
-            file_paths = "<br/>".join(node.sources)
+            display_entries: set[str] = set()
+            for ref in node.sources:
+                entry_label = ref.path
+                event_name = (ref.event or "").strip()
+                if ref.multi_file and event_name:
+                    entry_label = f"{entry_label} – {event_name}"
+                display_entries.add(entry_label)
+            file_paths = "<br/>".join(sorted(display_entries))
         else:
             file_paths = "-"
         rows.append(f"| {node.id} | {file_paths} | {sequence} |")
@@ -410,24 +435,38 @@ def main(argv: Sequence[str] | None = None) -> int:
     root_origins: dict[str, str] = {}
 
     for path in pgn_files:
-        moves, fen, headers, branching_stats = read_main_line(path)
-        if not moves:
-            continue
         rel = safe_relative(path, pgn_root)
-        root_key = fen if fen else "startpos"
-        root_label = f"FEN: {fen}" if fen else "Starting position"
-        root_labels.setdefault(root_key, root_label)
-        root_origins.setdefault(root_key, "starting position" if root_key == "startpos" else root_key)
-        section_label = infer_section_label(headers, root_labels[root_key])
+        game_entries = list(iter_games_from_file(path))
+        game_count = len(game_entries)
+        if not game_count:
+            continue
+        for game_index, game in game_entries:
+            moves, fen, headers = extract_main_line(game)
+            if not moves:
+                continue
+            branching_stats = collect_branching_stats_from_game(game)
+            root_key = fen if fen else "startpos"
+            root_label = f"FEN: {fen}" if fen else "Starting position"
+            root_labels.setdefault(root_key, root_label)
+            root_origins.setdefault(root_key, "starting position" if root_key == "startpos" else root_key)
 
-        if args.side == "auto":
-            target_side = decide_side_from_stats(branching_stats)
-        else:
-            target_side = RepertoireSide(args.side)
+            if args.side == "auto":
+                target_side = decide_side_from_stats(branching_stats)
+            else:
+                target_side = RepertoireSide(args.side)
 
-        bucket = ensure_bucket(buckets, root_key, target_side, root_labels[root_key])
-        add_line(bucket.root, moves, rel)
-        bucket.sources.add(rel)
+            bucket = ensure_bucket(buckets, root_key, target_side, root_labels[root_key])
+            _, game_slug = describe_game_from_headers(headers, game_index)
+            unique_id = f"{rel}::{game_slug}"
+            event_label = (headers.get("Event") or "").strip()
+            source_ref = SourceRef(
+                path=rel,
+                identifier=unique_id,
+                event=event_label,
+                multi_file=game_count > 1,
+            )
+            add_line(bucket.root, moves, source_ref)
+            bucket.sources.add(source_ref)
 
     sections: list[DiagramSection] = []
     if args.side == "auto":
@@ -471,7 +510,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     side=side,
                     nodes=nodes,
                     edges=edges,
-                    sources=sorted(bucket.sources),
+                    sources=tuple(sorted(bucket.sources)),
                 )
             )
 

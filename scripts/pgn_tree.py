@@ -9,12 +9,13 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Sequence
+from typing import Iterable, Sequence, TextIO
 
 from common import (
     RepertoireSide,
     collect_branching_stats,
     decide_side_from_stats,
+    describe_game_from_headers,
     format_single_move,
     mermaid_escape,
     requires_startpos_root,
@@ -608,6 +609,16 @@ def diagram_artifacts_from_game(
     return nodes, edges, side, origin_label
 
 
+def enumerate_pgn_games(handle: TextIO) -> Iterable[tuple[int, chess.pgn.Game]]:
+    index = 1
+    while True:
+        game = chess.pgn.read_game(handle)
+        if game is None:
+            break
+        yield index, game
+        index += 1
+
+
 def get_pgn_from_file(path: Path) -> chess.pgn.Game | None:
     with path.open(encoding="utf-8") as handle:
         return chess.pgn.read_game(handle)
@@ -633,41 +644,94 @@ def parse_pgn(
     return diagram, legend, side, origin_label
 
 
-def generate_markdown(
+def parse_pgn_collection(
+    pgn_text: str,
+    side_preference: str = "auto",
+    piece_symbols: bool = False,
+) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    handle = io.StringIO(pgn_text)
+    for game_index, game in enumerate_pgn_games(handle):
+        diagram, legend, side, origin_label = parse_pgn(
+            game,
+            side_preference=side_preference,
+            piece_symbols=piece_symbols,
+        )
+        title, slug = describe_game_from_headers(dict(game.headers), game_index)
+        entries.append(
+            {
+                "title": title,
+                "slug": slug,
+                "diagram": diagram,
+                "legend": legend,
+                "side": side.value,
+                "origin": origin_label,
+            }
+        )
+
+    if entries:
+        return entries
+
+    diagram, legend, side, origin_label = parse_pgn(None)
+    return [
+        {
+            "title": "Invalid PGN",
+            "slug": "invalid_pgn",
+            "diagram": diagram,
+            "legend": legend,
+            "side": side.value,
+            "origin": origin_label,
+        }
+    ]
+
+
+def build_override_filename(base_name: str, slug: str, default_suffix: str) -> str:
+    base_path = Path(base_name)
+    stem = base_path.stem or base_name or "diagram"
+    suffix = base_path.suffix or default_suffix
+    return f"{stem}_{slug}{suffix}"
+
+
+def generate_markdowns_for_file(
     path: Path,
     side_preference: str,
     output_dir: Path | None,
     output_name_override: str | None,
     piece_symbols: bool = False,
 ) -> bool:
-    game = get_pgn_from_file(path)
-    if game is None:
-        print(f"[WARN] Could not read any game in {path}", file=sys.stderr)
-        return False
+    any_game_written = False
+    with path.open(encoding="utf-8") as handle:
+        for game_index, game in enumerate_pgn_games(handle):
+            diagram, legend, side, origin_label = parse_pgn(
+                game,
+                side_preference,
+                piece_symbols=piece_symbols,
+            )
+            title, slug = describe_game_from_headers(dict(game.headers), game_index)
+            friendly_name = f"{path.name} ({title})"
+            markdown = build_markdown(
+                f"Full diagram: {path.stem}",
+                diagram,
+                legend,
+                friendly_name,
+                side,
+                origin_label,
+            )
+            default_filename = f"{path.stem}_{slug}_diagram.md"
+            if output_dir is not None:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / default_filename
+            elif output_name_override is not None:
+                override_name = build_override_filename(output_name_override, slug, ".md")
+                output_path = path.with_name(override_name)
+            else:
+                output_path = path.with_name(default_filename)
+            output_path.write_text(markdown, encoding="utf-8")
+            any_game_written = True
 
-    diagram, legend, side, origin_label = parse_pgn(
-        game,
-        side_preference,
-        piece_symbols=piece_symbols,
-    )
-    markdown = build_markdown(
-        f"Full diagram: {path.stem}",
-        diagram,
-        legend,
-        path.name,
-        side,
-        origin_label,
-    )
-    default_filename = f"{path.stem}_diagram.md"
-    if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / default_filename
-    elif output_name_override is not None:
-        output_path = path.with_name(output_name_override)
-    else:
-        output_path = path.with_name(default_filename)
-    output_path.write_text(markdown, encoding="utf-8")
-    return True
+    if not any_game_written:
+        print(f"[WARN] Could not read any game in {path}", file=sys.stderr)
+    return any_game_written
 
 
 def main() -> int:
@@ -702,7 +766,7 @@ def main() -> int:
 
     ok = True
     for path in pgn_files:
-        ok &= generate_markdown(
+        ok &= generate_markdowns_for_file(
             path,
             args.side,
             output_dir,

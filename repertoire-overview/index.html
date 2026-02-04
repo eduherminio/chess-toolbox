@@ -20,8 +20,8 @@
 				<input type="file" id="pgn-folder" accept=".pgn,.PGN,application/x-chess-pgn,text/plain" multiple class="hidden" />
 				<input type="file" id="pgn-files" accept=".pgn,.PGN,application/x-chess-pgn,text/plain" multiple class="hidden" />
 				<div class="picker-buttons">
-					<button id="folder-picker" class="ghost-btn" disabled>PGN folder</button>
-					<button id="file-picker" class="ghost-btn" disabled>PGN files</button>
+					<button id="folder-picker" class="primary-btn" disabled>PGN folder</button>
+					<button id="file-picker" class="primary-btn" disabled>PGN files</button>
 				</div>
 			</div>
 
@@ -53,8 +53,8 @@
 				<h2 id="diagram-title" class="hidden"></h2>
 				<div class="download-actions">
 					<button id="diagram-theme-btn" class="ghost-btn hidden" disabled>Light diagram background ☀</button>
-					<button id="download-btn" class="ghost-btn hidden" disabled>Download markdown ⭳</button>
-					<button id="download-images-btn" class="ghost-btn hidden" disabled>Download images ⭳</button>
+					<button id="download-sections-markdown-btn" class="ghost-btn hidden" disabled>Download all markdowns ⭳</button>
+					<button id="download-images-btn" class="ghost-btn hidden" disabled>Download all images ⭳</button>
 				</div>
 			</div>
 			<div id="sections-container" class="sections-stack"></div>
@@ -85,7 +85,7 @@
 		const sideSelect = document.getElementById("side-select");
 		const pieceSymbolsInput = document.getElementById("piece-symbols");
 		const maxPlyInput = document.getElementById("max-ply");
-		const downloadBtn = document.getElementById("download-btn");
+		const downloadSectionsMarkdownBtn = document.getElementById("download-sections-markdown-btn");
 		const downloadImagesBtn = document.getElementById("download-images-btn");
 		const diagramThemeBtn = document.getElementById("diagram-theme-btn");
 		const diagramTitle = document.getElementById("diagram-title");
@@ -94,6 +94,7 @@
 		const statusEl = document.getElementById("status");
 		const UPLOAD_BASE = "/tmp/repertoire_uploads";
 		const diagramDefinitions = new Map();
+		const sectionMarkdownEntries = new Map();
 		const textEncoder = new TextEncoder();
 		const textDecoder = new TextDecoder("utf-8");
 		const svgSerializer = new XMLSerializer();
@@ -108,9 +109,8 @@
 			directory: "Ready. Choose a PGN folder or multiple PGN files.",
 			filesOnly: "Ready. Select one or more PGN files (folder uploads aren't supported in this browser).",
 		});
-		let lastMarkdown = "";
-		let currentDownloadName = "PGN_variations_overview.md";
 		let currentDiagramTheme = DiagramThemes.DARK;
+		let currentFolderLabel = "overview";
 
 		configureFolderInputCapabilities();
 		syncPickerVisibilityWithCapabilities();
@@ -223,7 +223,7 @@
 				const sidePreference = sideSelect.value;
 				const usePieceSymbols = pieceSymbolsInput.checked;
 				const maxPlyValue = parseMaxPly(maxPlyInput.value);
-				currentDownloadName = deriveMarkdownName(stagingInfo.displayName);
+				currentFolderLabel = stagingInfo.displayName || "overview";
 
 				statusEl.textContent = "Inferring repertoire overview…";
 				const outputPath = `${stagingInfo.rootPath}/PGN_variations_overview.md`;
@@ -245,16 +245,21 @@
 
 				const markdownData = pyodide.FS.readFile(outputPath);
 				const markdown = typeof markdownData === "string" ? markdownData : textDecoder.decode(markdownData);
-				lastMarkdown = markdown;
-				const hasDiagrams = await renderOverview(markdown, stagingInfo.displayName);
+				const diagramCount = await renderOverview(markdown, stagingInfo.displayName);
 				statusEl.textContent = "Done.";
-				downloadBtn.disabled = false;
-				downloadBtn.classList.remove("hidden");
-				if (hasDiagrams) {
+				if (diagramCount > 1) {
 					downloadImagesBtn.disabled = false;
 					downloadImagesBtn.classList.remove("hidden");
+				} else {
+					downloadImagesBtn.disabled = true;
+					downloadImagesBtn.classList.add("hidden");
+				}
+				if (diagramCount > 0) {
 					diagramThemeBtn.disabled = false;
 					diagramThemeBtn.classList.remove("hidden");
+				} else {
+					diagramThemeBtn.disabled = true;
+					diagramThemeBtn.classList.add("hidden");
 				}
 			} catch (err) {
 				console.error(err);
@@ -267,8 +272,10 @@
 		}
 
 		function resetDiagramOutputs() {
-			downloadBtn.disabled = true;
-			downloadBtn.classList.add("hidden");
+			if (downloadSectionsMarkdownBtn) {
+				downloadSectionsMarkdownBtn.disabled = true;
+				downloadSectionsMarkdownBtn.classList.add("hidden");
+			}
 			downloadImagesBtn.disabled = true;
 			downloadImagesBtn.classList.add("hidden");
 			diagramThemeBtn.disabled = true;
@@ -276,23 +283,22 @@
 			diagramTitle.classList.add("hidden");
 			sectionsContainer.innerHTML = "";
 			legendDiv.innerHTML = "";
+			sectionMarkdownEntries.clear();
 		}
 
-		downloadBtn.addEventListener("click", () => {
-			if (!lastMarkdown) {
-				return;
-			}
-			const themedMarkdown = applyDiagramThemeToMarkdown(lastMarkdown, currentDiagramTheme);
-			const blob = new Blob([themedMarkdown], { type: "text/markdown" });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = currentDownloadName;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			URL.revokeObjectURL(url);
-		});
+		if (downloadSectionsMarkdownBtn) {
+			downloadSectionsMarkdownBtn.addEventListener("click", () => {
+				if (!sectionMarkdownEntries.size) {
+					return;
+				}
+				downloadSectionsMarkdownBtn.disabled = true;
+				try {
+					downloadAllSectionMarkdowns();
+				} finally {
+					downloadSectionsMarkdownBtn.disabled = false;
+				}
+			});
+		}
 
 		downloadImagesBtn.addEventListener("click", async () => {
 			if (!diagramDefinitions.size) {
@@ -414,50 +420,118 @@
 			return parsed;
 		}
 
-		function deriveMarkdownName(folderName) {
-			const safe = (folderName || "overview").trim() || "overview";
-			return `${safe}_PGN_variations_overview.md`;
+		function buildSectionMarkdown(sectionTitle, diagramDefinition, tableMarkdown) {
+			const parts = [];
+			const normalizedTitle = (sectionTitle || "").trim();
+			if (normalizedTitle) {
+				parts.push(`## ${normalizedTitle}`);
+			}
+			const cleanDiagram = (diagramDefinition || "").trim();
+			if (cleanDiagram) {
+				parts.push("```mermaid", cleanDiagram, "```");
+			}
+			const cleanTable = (tableMarkdown || "").trim();
+			if (cleanTable) {
+				parts.push(cleanTable);
+			}
+			parts.push("> Source: eduherminio/chess-toolbox");
+			return `${parts.join("\n\n").trim()}\n`;
+		}
+
+		function deriveSectionMarkdownName(folderLabel, sectionTitle, index) {
+			const base = slugify(folderLabel || "overview");
+			const sectionSlug = slugify(sectionTitle || `section_${index + 1}`);
+			return `${base}_${sectionSlug}_diagram.md`;
 		}
 
 		async function renderOverview(markdown, folderLabel) {
 			const parsed = parseOverviewMarkdown(markdown);
+			const isSingleDiagram = parsed.sections.length === 1;
 			diagramTitle.textContent = parsed.title || `Repertoire overview (${folderLabel})`;
 			diagramTitle.classList.remove("hidden");
 			sectionsContainer.innerHTML = "";
 			diagramDefinitions.clear();
+			sectionMarkdownEntries.clear();
 
 			parsed.sections.forEach((section, idx) => {
 				const sectionEl = document.createElement("section");
 				sectionEl.className = "section-card";
 
 				const heading = document.createElement("h3");
-				heading.textContent = section.title;
+				const headingText = isSingleDiagram ? extractRepertoireSubtitle(section.title) : section.title;
+				heading.textContent = headingText;
 				sectionEl.appendChild(heading);
+
+				const sectionActions = document.createElement("div");
+				sectionActions.className = "download-actions";
+				const sectionImageBtn = document.createElement("button");
+				sectionImageBtn.className = "ghost-btn";
+				sectionImageBtn.textContent = "Download image ⭳";
+				const sectionId = `diagram-section-${idx}`;
+				sectionImageBtn.addEventListener("click", async () => {
+					sectionImageBtn.disabled = true;
+					try {
+						await downloadSectionImage(sectionId);
+					} finally {
+						sectionImageBtn.disabled = false;
+					}
+				});
+				sectionActions.appendChild(sectionImageBtn);
+				const sectionMarkdownBtn = document.createElement("button");
+				sectionMarkdownBtn.className = "ghost-btn";
+				sectionMarkdownBtn.textContent = "Download markdown ⭳";
+				sectionMarkdownBtn.addEventListener("click", () => downloadSectionMarkdown(sectionId));
+				sectionActions.appendChild(sectionMarkdownBtn);
+				sectionEl.appendChild(sectionActions);
 
 				const diagramWrapper = document.createElement("div");
 				diagramWrapper.className = "diagram-wrapper";
 				const pre = document.createElement("pre");
 				pre.className = "mermaid";
-				pre.id = `diagram-section-${idx}`;
+				pre.id = sectionId;
 				diagramWrapper.appendChild(pre);
 				sectionEl.appendChild(diagramWrapper);
 				diagramDefinitions.set(pre.id, { definition: section.diagram, title: section.title });
+				const sectionMarkdown = buildSectionMarkdown(section.title, section.diagram, section.tableMarkdown);
+				const sectionFilename = deriveSectionMarkdownName(folderLabel, section.title, idx);
+				sectionMarkdownEntries.set(sectionId, { markdown: sectionMarkdown, filename: sectionFilename });
 
 				if (section.tableMarkdown) {
-					const tableHeading = document.createElement("h4");
-					tableHeading.textContent = "Terminal references";
-					sectionEl.appendChild(tableHeading);
-					const tableWrapper = document.createElement("div");
-					tableWrapper.innerHTML = tableMarkdownToHtml(section.tableMarkdown);
-					sectionEl.appendChild(tableWrapper);
+					if (isSingleDiagram) {
+						const fileNames = extractColumnValuesFromTable(section.tableMarkdown, "file");
+						if (fileNames.length) {
+							const sourceLabel = fileNames.length === 1 ? "Source file" : "Source files";
+							const fileParagraph = document.createElement("p");
+							fileParagraph.className = "section-source";
+							fileParagraph.textContent = `${sourceLabel}: ${fileNames.join(", ")}`;
+							sectionEl.appendChild(fileParagraph);
+						}
+					} else {
+						const tableHeading = document.createElement("h4");
+						tableHeading.textContent = "Terminal references";
+						sectionEl.appendChild(tableHeading);
+						const tableWrapper = document.createElement("div");
+						tableWrapper.innerHTML = tableMarkdownToHtml(section.tableMarkdown);
+						sectionEl.appendChild(tableWrapper);
+					}
 				}
 
 				sectionsContainer.appendChild(sectionEl);
 			});
 
+			if (downloadSectionsMarkdownBtn) {
+				if (sectionMarkdownEntries.size > 1) {
+					downloadSectionsMarkdownBtn.disabled = false;
+					downloadSectionsMarkdownBtn.classList.remove("hidden");
+				} else {
+					downloadSectionsMarkdownBtn.disabled = true;
+					downloadSectionsMarkdownBtn.classList.add("hidden");
+				}
+			}
+
 			legendDiv.innerHTML = parsed.footer ? `<p>${escapeHtml(parsed.footer)}</p>` : "";
 			await renderAllDiagrams();
-			return diagramDefinitions.size > 0;
+			return diagramDefinitions.size;
 		}
 
 		function parseOverviewMarkdown(markdown) {
@@ -537,11 +611,10 @@
 			}
 			const bodyRows = rows.filter((row) => !/^\|\s*-+/.test(row));
 			const htmlRows = bodyRows.map((row, idx) => {
-				const cells = row.split("|").slice(1, -1).map((cell, cellIdx) => {
-					const tag = idx === 0 ? "th" : "td";
-					return `<${tag}>${escapeHtml(cell.trim())}</${tag}>`;
-				}).join("");
-				return `<tr>${cells}</tr>`;
+				const cells = row.split("|").slice(1, -1).map((cell) => cell.trim());
+				const tag = idx === 0 ? "th" : "td";
+				const rendered = cells.map((value) => `<${tag}>${escapeHtml(value)}</${tag}>`).join("");
+				return `<tr>${rendered}</tr>`;
 			});
 			return `<table>${htmlRows.join("")}</table>`;
 		}
@@ -566,8 +639,34 @@
 					continue;
 				}
 				const pngBlob = await svgMarkupToPngBlob(svgMarkup);
-				const filename = `${slugify(diagramTitle.textContent || "repertoire")}_${slugify(info?.title || `section_${idx + 1}`)}.png`;
+				const filename = `${slugify(diagramTitle.textContent || currentFolderLabel || "repertoire")}_${slugify(info?.title || `section_${idx + 1}`)}.png`;
 				triggerFileDownloadFromBlob(pngBlob, filename);
+			}
+		}
+
+		async function downloadSectionImage(sectionId) {
+			const svgMarkup = extractSvgMarkup(sectionId);
+			if (!svgMarkup) {
+				return;
+			}
+			const pngBlob = await svgMarkupToPngBlob(svgMarkup);
+			const info = diagramDefinitions.get(sectionId);
+			const filename = `${slugify(currentFolderLabel || diagramTitle.textContent || "repertoire")}_${slugify(info?.title || sectionId)}.png`;
+			triggerFileDownloadFromBlob(pngBlob, filename);
+		}
+
+		function downloadSectionMarkdown(sectionId) {
+			const entry = sectionMarkdownEntries.get(sectionId);
+			if (!entry || !entry.markdown) {
+				return;
+			}
+			const themedMarkdown = applyDiagramThemeToMarkdown(entry.markdown, currentDiagramTheme);
+			triggerMarkdownDownload(themedMarkdown, entry.filename);
+		}
+
+		function downloadAllSectionMarkdowns() {
+			for (const sectionId of sectionMarkdownEntries.keys()) {
+				downloadSectionMarkdown(sectionId);
 			}
 		}
 
@@ -625,6 +724,14 @@
 			});
 		}
 
+		function triggerMarkdownDownload(content, filename) {
+			if (!content) {
+				return;
+			}
+			const blob = new Blob([content], { type: "text/markdown" });
+			triggerFileDownloadFromBlob(blob, filename);
+		}
+
 		function triggerFileDownloadFromBlob(blob, filename) {
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement("a");
@@ -654,6 +761,41 @@
 					? "Dark theme ◐"
 					: "Light theme ☀";
 			}
+		}
+
+		function extractColumnValuesFromTable(markdown, targetColumn) {
+			if (!markdown) {
+				return [];
+			}
+			const rows = markdown.split(/\r?\n/).filter(Boolean);
+			if (rows.length < 3) {
+				return [];
+			}
+			const headerCells = rows[0].split("|").slice(1, -1).map((cell) => cell.trim().toLowerCase());
+			const columnIndex = headerCells.findIndex((cell) => cell === targetColumn.toLowerCase());
+			if (columnIndex === -1) {
+				return [];
+			}
+			const values = [];
+			for (let idx = 2; idx < rows.length; idx += 1) {
+				const cells = rows[idx].split("|").slice(1, -1).map((cell) => cell.trim());
+				if (cells[columnIndex]) {
+					values.push(cells[columnIndex]);
+				}
+			}
+			return values;
+		}
+
+		function extractRepertoireSubtitle(value) {
+			if (!value) {
+				return "";
+			}
+			const separatorIndex = value.lastIndexOf(" - ");
+			if (separatorIndex === -1) {
+				return value;
+			}
+			const subtitle = value.slice(separatorIndex + 3).trim();
+			return subtitle || value;
 		}
 
 		function getCanvasBackgroundColor() {
