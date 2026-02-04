@@ -588,32 +588,28 @@
 		async function svgMarkupToPngBlob(svgMarkup) {
 			const viewBoxMatch = svgMarkup.match(/viewBox="([\d.\s-]+)"/);
 			const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
-			try {
-				const img = await loadImage(svgMarkup);
-				const baseWidth = viewBox ? viewBox[2] : (img.naturalWidth || img.width || 1);
-				const baseHeight = viewBox ? viewBox[3] : (img.naturalHeight || img.height || 1);
-				const canvas = document.createElement("canvas");
-				canvas.width = Math.max(1, Math.round(baseWidth * IMAGE_EXPORT_SCALE));
-				canvas.height = Math.max(1, Math.round(baseHeight * IMAGE_EXPORT_SCALE));
-				const ctx = canvas.getContext("2d");
-				if (ctx) {
-					ctx.fillStyle = getCanvasBackgroundColor();
-					ctx.fillRect(0, 0, canvas.width, canvas.height);
-					ctx.scale(IMAGE_EXPORT_SCALE, IMAGE_EXPORT_SCALE);
-					ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
-				}
-				return await new Promise((resolve, reject) => {
-					canvas.toBlob((blob) => {
-						if (blob) {
-							resolve(blob);
-						} else {
-							reject(new Error("Could not export canvas"));
-						}
-					}, "image/png");
-				});
-			} catch (err) {
-				throw err;
+			const img = await loadImage(svgMarkup);
+			const baseWidth = viewBox ? viewBox[2] : (img.naturalWidth || img.width || 1);
+			const baseHeight = viewBox ? viewBox[3] : (img.naturalHeight || img.height || 1);
+			const canvas = document.createElement("canvas");
+			canvas.width = Math.max(1, Math.round(baseWidth * IMAGE_EXPORT_SCALE));
+			canvas.height = Math.max(1, Math.round(baseHeight * IMAGE_EXPORT_SCALE));
+			const ctx = canvas.getContext("2d");
+			if (ctx) {
+				ctx.fillStyle = getCanvasBackgroundColor();
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				ctx.scale(IMAGE_EXPORT_SCALE, IMAGE_EXPORT_SCALE);
+				ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
 			}
+			return await new Promise((resolve, reject) => {
+				canvas.toBlob((blob) => {
+					if (blob) {
+						resolve(blob);
+					} else {
+						reject(new Error("Could not export canvas"));
+					}
+				}, "image/png");
+			});
 		}
 
 		function loadImage(svgMarkup) {
