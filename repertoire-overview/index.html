@@ -17,8 +17,12 @@
 		<section class="panel">
 			<p id="status" class="status-line">Initializing Python and installing python-chess…</p>
 			<div class="file-input-helper">
-				<input type="file" id="pgn-folder" accept=".pgn" webkitdirectory multiple class="hidden" />
-				<button id="folder-picker" class="primary-btn" disabled>Choose PGN folder</button>
+				<input type="file" id="pgn-folder" accept=".pgn,.PGN,application/x-chess-pgn,text/plain" multiple class="hidden" />
+				<input type="file" id="pgn-files" accept=".pgn,.PGN,application/x-chess-pgn,text/plain" multiple class="hidden" />
+				<div class="picker-buttons">
+					<button id="folder-picker" class="ghost-btn" disabled>PGN folder</button>
+					<button id="file-picker" class="ghost-btn" disabled>PGN files</button>
+				</div>
 			</div>
 
 			<h2 id="options-heading" class="options-heading hidden">Diagram options</h2>
@@ -73,7 +77,9 @@
 
 		let pyodide;
 		const folderInput = document.getElementById("pgn-folder");
+		const filesInput = document.getElementById("pgn-files");
 		const folderPicker = document.getElementById("folder-picker");
+		const filePicker = document.getElementById("file-picker");
 		const optionsContainer = document.getElementById("options");
 		const optionsHeading = document.getElementById("options-heading");
 		const sideSelect = document.getElementById("side-select");
@@ -97,19 +103,61 @@
 			[DiagramThemes.DARK]: { background: "#0b1121" },
 			[DiagramThemes.LIGHT]: { background: "#ffffff" },
 		});
+		const supportsDirectoryUploads = "webkitdirectory" in folderInput;
+		const readyStatusMessages = Object.freeze({
+			directory: "Ready. Choose a PGN folder or multiple PGN files.",
+			filesOnly: "Ready. Select one or more PGN files (folder uploads aren't supported in this browser).",
+		});
 		let lastMarkdown = "";
 		let currentDownloadName = "PGN_variations_overview.md";
 		let currentDiagramTheme = DiagramThemes.DARK;
 
+		configureFolderInputCapabilities();
+		syncPickerVisibilityWithCapabilities();
 		folderInput.value = "";
 		applyDiagramTheme(DiagramThemes.DARK);
 
+		function configureFolderInputCapabilities() {
+			folderInput.multiple = true;
+			if (supportsDirectoryUploads) {
+				folderInput.setAttribute("webkitdirectory", "");
+			} else {
+				folderInput.removeAttribute("webkitdirectory");
+			}
+		}
+
+		function setReadyStatusMessage() {
+			statusEl.textContent = supportsDirectoryUploads
+				? readyStatusMessages.directory
+				: readyStatusMessages.filesOnly;
+		}
+
+		function getEmptySelectionMessage(selectionType) {
+			if (selectionType === "folder" && supportsDirectoryUploads) {
+				return "Select a folder that contains at least one .pgn file.";
+			}
+			return supportsDirectoryUploads
+				? "Select one or more .pgn files."
+				: "Select one or more .pgn files (folder uploads aren't supported in this browser).";
+		}
+
 		function showUploadControls() {
-			folderPicker.disabled = false;
+			syncPickerVisibilityWithCapabilities();
+			folderPicker.disabled = !supportsDirectoryUploads;
+			filePicker.disabled = false;
+			filePicker.classList.remove("hidden");
 			if (optionsHeading) {
 				optionsHeading.classList.remove("hidden");
 			}
 			optionsContainer.classList.remove("hidden");
+		}
+
+		function syncPickerVisibilityWithCapabilities() {
+			if (supportsDirectoryUploads) {
+				folderPicker.classList.remove("hidden");
+			} else {
+				folderPicker.classList.add("hidden");
+			}
 		}
 
 		async function initPython() {
@@ -132,35 +180,42 @@
 
 			pyodide.runPython("from repertoire_overview import main");
 
-			statusEl.textContent = "Ready. Pick some PGN files from your repertoire.";
+			setReadyStatusMessage();
 			showUploadControls();
 		}
 
 		initPython();
 
 		folderPicker.addEventListener("click", () => {
+			if (!supportsDirectoryUploads) {
+				return;
+			}
 			folderInput.click();
 		});
 
-		folderInput.addEventListener("change", async (event) => {
-			const files = Array.from(event.target.files || []);
-			const pgnFiles = files.filter((file) => file.name.toLowerCase().endsWith(".pgn"));
+		filePicker.addEventListener("click", () => {
+			filesInput.click();
+		});
 
+		folderInput.addEventListener("change", async (event) => {
+			await handlePgnSelection(Array.from(event.target.files || []), "folder", folderInput);
+		});
+
+		filesInput.addEventListener("change", async (event) => {
+			await handlePgnSelection(Array.from(event.target.files || []), "files", filesInput);
+		});
+
+		async function handlePgnSelection(files, selectionType, inputEl) {
+			const pgnFiles = files.filter((file) => file.name.toLowerCase().endsWith(".pgn"));
 			if (!pgnFiles.length) {
-				statusEl.textContent = "Select a folder that contains at least one .pgn file. If you're using Firefox, please try another browser";
-				folderInput.value = "";
+				statusEl.textContent = getEmptySelectionMessage(selectionType);
+				if (inputEl) {
+					inputEl.value = "";
+				}
 				return;
 			}
 
-			downloadBtn.disabled = true;
-			downloadBtn.classList.add("hidden");
-			downloadImagesBtn.disabled = true;
-			downloadImagesBtn.classList.add("hidden");
-			diagramThemeBtn.disabled = true;
-			diagramThemeBtn.classList.add("hidden");
-			diagramTitle.classList.add("hidden");
-			sectionsContainer.innerHTML = "";
-			legendDiv.innerHTML = "";
+			resetDiagramOutputs();
 			statusEl.textContent = "Copying PGNs into the embedded filesystem…";
 
 			try {
@@ -180,8 +235,8 @@
 					usePieceSymbols,
 				);
 				const exitCode = await pyodide.runPythonAsync(`
-from repertoire_overview import main
-main(argv=${JSON.stringify(args)})
+	from repertoire_overview import main
+	main(argv=${JSON.stringify(args)})
 				`);
 
 				if (exitCode !== 0) {
@@ -205,9 +260,23 @@ main(argv=${JSON.stringify(args)})
 				console.error(err);
 				statusEl.textContent = `Something went wrong: ${err.message}`;
 			} finally {
-				folderInput.value = "";
+				if (inputEl) {
+					inputEl.value = "";
+				}
 			}
-		});
+		}
+
+		function resetDiagramOutputs() {
+			downloadBtn.disabled = true;
+			downloadBtn.classList.add("hidden");
+			downloadImagesBtn.disabled = true;
+			downloadImagesBtn.classList.add("hidden");
+			diagramThemeBtn.disabled = true;
+			diagramThemeBtn.classList.add("hidden");
+			diagramTitle.classList.add("hidden");
+			sectionsContainer.innerHTML = "";
+			legendDiv.innerHTML = "";
+		}
 
 		downloadBtn.addEventListener("click", () => {
 			if (!lastMarkdown) {
@@ -261,34 +330,52 @@ main(argv=${JSON.stringify(args)})
 				}
 			}
 
-			let topLevelFolder = null;
+			const hasNestedStructure = files.some((file) => file.webkitRelativePath && file.webkitRelativePath.length > 0);
 			let written = 0;
-			for (const file of files) {
-				const relativeParts = normalizeRelativePath(file);
-				if (!relativeParts.length) {
-					continue;
+
+			if (hasNestedStructure) {
+				let topLevelFolder = null;
+				for (const file of files) {
+					const relativeParts = normalizeRelativePath(file);
+					if (!relativeParts.length) {
+						continue;
+					}
+					if (!topLevelFolder) {
+						topLevelFolder = relativeParts[0];
+					}
+					const filePath = `${sessionDir}/${relativeParts.join("/")}`;
+					const dirPath = filePath.slice(0, filePath.lastIndexOf("/"));
+					if (dirPath) {
+						pyodide.FS.mkdirTree(dirPath);
+					}
+					const content = await file.text();
+					pyodide.FS.writeFile(filePath, textEncoder.encode(content));
+					written += 1;
 				}
-				if (!topLevelFolder) {
-					topLevelFolder = relativeParts[0];
+				if (!written) {
+					throw new Error("No PGN files could be copied");
 				}
-				const filePath = `${sessionDir}/${relativeParts.join("/")}`;
-				const dirPath = filePath.slice(0, filePath.lastIndexOf("/"));
-				if (dirPath) {
-					pyodide.FS.mkdirTree(dirPath);
-				}
-				const content = await file.text();
-				const encoded = textEncoder.encode(content);
-				pyodide.FS.writeFile(filePath, encoded);
-				written += 1;
+				const safeFolder = topLevelFolder || "repertoire";
+				return { rootPath: `${sessionDir}/${safeFolder}`, displayName: safeFolder };
 			}
 
+			const fallbackRoot = `${sessionDir}/pgn_upload`;
+			pyodide.FS.mkdirTree(fallbackRoot);
+			for (const file of files) {
+				const rawName = (file.name || "").trim();
+				if (!rawName) {
+					continue;
+				}
+				const safeName = rawName.replace(/[\\/]+/g, "_");
+				const filePath = `${fallbackRoot}/${safeName}`;
+				const content = await file.text();
+				pyodide.FS.writeFile(filePath, textEncoder.encode(content));
+				written += 1;
+			}
 			if (!written) {
 				throw new Error("No PGN files could be copied");
 			}
-
-			const rootPath = topLevelFolder ? `${sessionDir}/${topLevelFolder}` : sessionDir;
-			const displayName = topLevelFolder || "repertoire";
-			return { rootPath, displayName };
+			return { rootPath: fallbackRoot, displayName: deriveFallbackDisplayName(files) };
 		}
 
 		function normalizeRelativePath(file) {
@@ -296,6 +383,16 @@ main(argv=${JSON.stringify(args)})
 				? file.webkitRelativePath
 				: file.name;
 			return relative.split("/").filter(Boolean);
+		}
+
+		function deriveFallbackDisplayName(files) {
+			if (!files.length) {
+				return "pgn_files";
+			}
+			const candidate = (files[0].name || "")
+				.replace(/\.[^.]+$/i, "")
+				.trim();
+			return candidate || "pgn_files";
 		}
 
 		function buildCliArgs(rootPath, outputPath, side, maxPly, pieceSymbols) {

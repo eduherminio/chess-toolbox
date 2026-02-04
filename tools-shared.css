@@ -131,6 +131,13 @@ select {
     margin-bottom: 1.5rem;
 }
 
+.picker-buttons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
 .primary-btn,
 .ghost-btn {
     border: 1px solid transparent;
