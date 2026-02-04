@@ -199,8 +199,6 @@ parse_pgn_collection(
 			const viewBoxMatch = svgText.match(/viewBox="([\d.\s-]+)"/);
 			const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
 			return new Promise((resolve, reject) => {
-				const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
-				const url = URL.createObjectURL(svgBlob);
 				const img = new Image();
 				img.onload = () => {
 					const baseWidth = viewBox ? viewBox[2] : img.width;
@@ -219,14 +217,12 @@ parse_pgn_collection(
 						} else {
 							reject(new Error("Could not convert canvas to blob"));
 						}
-						URL.revokeObjectURL(url);
 					}, "image/jpeg", 0.95);
 				};
 				img.onerror = (err) => {
-					URL.revokeObjectURL(url);
 					reject(err);
 				};
-				img.src = url;
+				img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgText);
 			});
 		}
 
