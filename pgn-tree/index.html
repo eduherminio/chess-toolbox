@@ -276,13 +276,9 @@ parse_pgn_collection(
 				return;
 			}
 			const fileLabel = originalName || "Diagram.pgn";
-			if (entries.length === 1) {
-				const firstEntry = entries[0] || {};
-				const sideLabel = formatSideLabel(firstEntry.side);
-				const titleLabel = sideLabel
-					? `${fileLabel} - ${sideLabel} repertoire`
-					: fileLabel;
-				diagramTitle.textContent = titleLabel;
+			const isSingleDiagram = entries.length === 1;
+			if (isSingleDiagram) {
+				diagramTitle.textContent = fileLabel;
 			} else {
 				diagramTitle.textContent = `${fileLabel} (${entries.length} games)`;
 			}
@@ -290,17 +286,27 @@ parse_pgn_collection(
 			diagramThemeBtn.disabled = false;
 			diagramThemeBtn.classList.remove("hidden");
 			if (downloadAllImagesBtn) {
-				downloadAllImagesBtn.disabled = false;
-				downloadAllImagesBtn.classList.remove("hidden");
+				if (isSingleDiagram) {
+					downloadAllImagesBtn.disabled = true;
+					downloadAllImagesBtn.classList.add("hidden");
+				} else {
+					downloadAllImagesBtn.disabled = false;
+					downloadAllImagesBtn.classList.remove("hidden");
+				}
 			}
 			if (downloadAllMarkdownBtn) {
-				downloadAllMarkdownBtn.disabled = false;
-				downloadAllMarkdownBtn.classList.remove("hidden");
+				if (isSingleDiagram) {
+					downloadAllMarkdownBtn.disabled = true;
+					downloadAllMarkdownBtn.classList.add("hidden");
+				} else {
+					downloadAllMarkdownBtn.disabled = false;
+					downloadAllMarkdownBtn.classList.remove("hidden");
+				}
 			}
 
 			for (let idx = 0; idx < entries.length; idx += 1) {
 				// eslint-disable-next-line no-await-in-loop
-				await renderDiagramCard(entries[idx], idx, fileLabel);
+				await renderDiagramCard(entries[idx], idx, fileLabel, isSingleDiagram);
 			}
 		}
 
@@ -310,7 +316,7 @@ parse_pgn_collection(
 			return slug || `game_${idx + 1}`;
 		}
 
-		async function renderDiagramCard(entry, idx, originalName) {
+		async function renderDiagramCard(entry, idx, originalName, suppressHeading = false) {
 			const entryData = entry || {};
 			const safeTitle = (entryData.title && entryData.title.trim()) || `Game ${idx + 1}`;
 			const slug = entryData.slug ? entryData.slug.trim() : slugifyLabel(safeTitle, idx);
@@ -318,14 +324,15 @@ parse_pgn_collection(
 			section.className = "section-card";
 			diagramCollection.appendChild(section);
 
-			const heading = document.createElement("h3");
-			heading.textContent = safeTitle;
-			section.appendChild(heading);
+			if (!suppressHeading) {
+				const heading = document.createElement("h3");
+				heading.textContent = safeTitle;
+				section.appendChild(heading);
+			}
 
 			const sideLabel = formatSideLabel(entryData.side);
 			const originLabel = entryData.origin || "starting position";
-			const subtitle = document.createElement("p");
-			subtitle.className = "section-subtitle";
+			const subtitle = document.createElement("h3");
 			subtitle.textContent = sideLabel
 				? `${sideLabel} repertoire from ${originLabel}`
 				: `Origin: ${originLabel}`;

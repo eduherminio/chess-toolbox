@@ -40,7 +40,7 @@ class OpeningNode:
         self.ply = ply
         self.sequence = sequence
         self.children: dict[str, OpeningNode] = {}
-        self.sources: set[str] = set()
+        self.sources: set[SourceRef] = set()
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class DiagramNode:
     id: str
     label: str
     sequence: tuple[str, ...]
-    sources: Sequence[str]
+    sources: Sequence[SourceRef]
     kind: str = "move"
 
 
@@ -59,11 +59,19 @@ class DiagramEdge:
     label: str
 
 
+@dataclass(frozen=True, order=True)
+class SourceRef:
+    path: str
+    identifier: str
+    event: str = ""
+    multi_file: bool = False
+
+
 @dataclass
 class RepertoireBucket:
     root_label: str
     root: OpeningNode
-    sources: set[str]
+    sources: set[SourceRef]
 
 
 @dataclass
@@ -72,7 +80,7 @@ class DiagramSection:
     side: RepertoireSide
     nodes: Sequence[DiagramNode]
     edges: Sequence[DiagramEdge]
-    sources: Sequence[str]
+    sources: Sequence[SourceRef]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -144,7 +152,7 @@ def iter_games_from_file(path: Path) -> Iterable[tuple[int, chess.pgn.Game]]:
             index += 1
 
 
-def add_line(root: OpeningNode, moves: Iterable[str], source: str) -> None:
+def add_line(root: OpeningNode, moves: Iterable[str], source: SourceRef) -> None:
     root.sources.add(source)
     node = root
     for ply, move in enumerate(moves, start=1):
@@ -230,18 +238,30 @@ def build_diagram(
     def attach_path_block(node: OpeningNode, source_id: str) -> None:
         if not node.sources:
             return
-        for path_label in sorted(node.sources):
-            cache_key = (node, path_label)
+        grouped: dict[str, list[SourceRef]] = {}
+        for ref in node.sources:
+            grouped.setdefault(ref.path, []).append(ref)
+        for path_value in sorted(grouped):
+            cache_key = (node, path_value)
             path_node_id = path_nodes_cache.get(cache_key)
             if path_node_id is None:
-                file_label = format_path_label(path_label)
+                refs_for_path = grouped[path_value]
+                file_label = format_path_label(path_value)
+                if any(ref.multi_file for ref in refs_for_path):
+                    event_entries = sorted({(ref.event or "").strip() for ref in refs_for_path if (ref.event or "").strip()})
+                    if event_entries:
+                        if len(event_entries) == 1:
+                            file_label = f"{file_label}<br/>Event: {event_entries[0]}"
+                        else:
+                            event_lines = "<br/>".join(f"- {entry}" for entry in event_entries)
+                            file_label = f"{file_label}<br/>Events:<br/>{event_lines}"
                 path_node_id = next_node_id()
                 nodes.append(
                     DiagramNode(
                         id=path_node_id,
                         label=file_label,
                         sequence=node.sequence,
-                        sources=(path_label,),
+                        sources=tuple(sorted(refs_for_path)),
                         kind="path",
                     )
                 )
@@ -342,7 +362,14 @@ def render_table(nodes: Sequence[DiagramNode], use_piece_symbols: bool = False) 
             continue
         sequence = format_sequence(node.sequence, use_piece_symbols=use_piece_symbols)
         if node.sources:
-            file_paths = "<br/>".join(node.sources)
+            display_entries: set[str] = set()
+            for ref in node.sources:
+                entry_label = ref.path
+                event_name = (ref.event or "").strip()
+                if ref.multi_file and event_name:
+                    entry_label = f"{entry_label} – {event_name}"
+                display_entries.add(entry_label)
+            file_paths = "<br/>".join(sorted(display_entries))
         else:
             file_paths = "-"
         rows.append(f"| {node.id} | {file_paths} | {sequence} |")
@@ -409,7 +436,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for path in pgn_files:
         rel = safe_relative(path, pgn_root)
-        for game_index, game in iter_games_from_file(path):
+        game_entries = list(iter_games_from_file(path))
+        game_count = len(game_entries)
+        if not game_count:
+            continue
+        for game_index, game in game_entries:
             moves, fen, headers = extract_main_line(game)
             if not moves:
                 continue
@@ -425,10 +456,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 target_side = RepertoireSide(args.side)
 
             bucket = ensure_bucket(buckets, root_key, target_side, root_labels[root_key])
-            game_title, _ = describe_game_from_headers(headers, game_index)
-            source_label = f"{rel}::{game_title}"
-            add_line(bucket.root, moves, source_label)
-            bucket.sources.add(source_label)
+            _, game_slug = describe_game_from_headers(headers, game_index)
+            unique_id = f"{rel}::{game_slug}"
+            event_label = (headers.get("Event") or "").strip()
+            source_ref = SourceRef(
+                path=rel,
+                identifier=unique_id,
+                event=event_label,
+                multi_file=game_count > 1,
+            )
+            add_line(bucket.root, moves, source_ref)
+            bucket.sources.add(source_ref)
 
     sections: list[DiagramSection] = []
     if args.side == "auto":
@@ -472,7 +510,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     side=side,
                     nodes=nodes,
                     edges=edges,
-                    sources=sorted(bucket.sources),
+                    sources=tuple(sorted(bucket.sources)),
                 )
             )
 
