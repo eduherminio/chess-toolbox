@@ -13,6 +13,7 @@ from common import (
     BranchingStats,
     RepertoireSide,
     decide_side_from_stats,
+    describe_game_from_headers,
     format_path_label,
     format_sequence,
     format_single_move,
@@ -122,19 +123,25 @@ def collect_branching_stats_from_game(game: chess.pgn.Game) -> dict[int, Branchi
     return stats
 
 
-def read_main_line(path: Path) -> tuple[list[str], str | None, dict[str, str], dict[int, BranchingStats]]:
-    with path.open(encoding="utf-8") as handle:
-        game = chess.pgn.read_game(handle)
-    if game is None:
-        return [], None, {}, {0: BranchingStats(), 1: BranchingStats()}
+def extract_main_line(game: chess.pgn.Game) -> tuple[list[str], str | None, dict[str, str]]:
     board = game.board()
     moves: list[str] = []
     for move in game.mainline_moves():
         san = board.san(move)
         moves.append(san)
         board.push(move)
-    stats = collect_branching_stats_from_game(game)
-    return moves, game.headers.get("FEN"), dict(game.headers), stats
+    return moves, game.headers.get("FEN"), dict(game.headers)
+
+
+def iter_games_from_file(path: Path) -> Iterable[tuple[int, chess.pgn.Game]]:
+    with path.open(encoding="utf-8") as handle:
+        index = 1
+        while True:
+            game = chess.pgn.read_game(handle)
+            if game is None:
+                break
+            yield index, game
+            index += 1
 
 
 def add_line(root: OpeningNode, moves: Iterable[str], source: str) -> None:
@@ -160,15 +167,6 @@ def ensure_bucket(
         bucket = RepertoireBucket(root_label=root_label, root=OpeningNode(), sources=set())
         buckets[(root_key, side)] = bucket
     return bucket
-
-
-def infer_section_label(headers: dict[str, str], default_label: str) -> str:
-    tag = headers.get("RepertoireGroup") or headers.get("Group")
-    if tag:
-        candidate = tag.strip()
-        if candidate:
-            return candidate
-    return default_label
 
 
 def build_diagram(
@@ -410,24 +408,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     root_origins: dict[str, str] = {}
 
     for path in pgn_files:
-        moves, fen, headers, branching_stats = read_main_line(path)
-        if not moves:
-            continue
         rel = safe_relative(path, pgn_root)
-        root_key = fen if fen else "startpos"
-        root_label = f"FEN: {fen}" if fen else "Starting position"
-        root_labels.setdefault(root_key, root_label)
-        root_origins.setdefault(root_key, "starting position" if root_key == "startpos" else root_key)
-        section_label = infer_section_label(headers, root_labels[root_key])
+        for game_index, game in iter_games_from_file(path):
+            moves, fen, headers = extract_main_line(game)
+            if not moves:
+                continue
+            branching_stats = collect_branching_stats_from_game(game)
+            root_key = fen if fen else "startpos"
+            root_label = f"FEN: {fen}" if fen else "Starting position"
+            root_labels.setdefault(root_key, root_label)
+            root_origins.setdefault(root_key, "starting position" if root_key == "startpos" else root_key)
 
-        if args.side == "auto":
-            target_side = decide_side_from_stats(branching_stats)
-        else:
-            target_side = RepertoireSide(args.side)
+            if args.side == "auto":
+                target_side = decide_side_from_stats(branching_stats)
+            else:
+                target_side = RepertoireSide(args.side)
 
-        bucket = ensure_bucket(buckets, root_key, target_side, root_labels[root_key])
-        add_line(bucket.root, moves, rel)
-        bucket.sources.add(rel)
+            bucket = ensure_bucket(buckets, root_key, target_side, root_labels[root_key])
+            game_title, _ = describe_game_from_headers(headers, game_index)
+            source_label = f"{rel}::{game_title}"
+            add_line(bucket.root, moves, source_label)
+            bucket.sources.add(source_label)
 
     sections: list[DiagramSection] = []
     if args.side == "auto":
