@@ -234,6 +234,7 @@
 				const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
 				const url = URL.createObjectURL(svgBlob);
 				const img = new Image();
+				img.crossOrigin = "anonymous";
 				img.onload = () => {
 					const baseWidth = viewBox ? viewBox[2] : img.width;
 					const baseHeight = viewBox ? viewBox[3] : img.height;
