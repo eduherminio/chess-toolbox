@@ -588,10 +588,8 @@
 		async function svgMarkupToPngBlob(svgMarkup) {
 			const viewBoxMatch = svgMarkup.match(/viewBox="([\d.\s-]+)"/);
 			const viewBox = viewBoxMatch ? viewBoxMatch[1].trim().split(/\s+/).map(Number) : null;
-			const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
-			const url = URL.createObjectURL(svgBlob);
 			try {
-				const img = await loadImage(url);
+				const img = await loadImage(svgMarkup);
 				const baseWidth = viewBox ? viewBox[2] : (img.naturalWidth || img.width || 1);
 				const baseHeight = viewBox ? viewBox[3] : (img.naturalHeight || img.height || 1);
 				const canvas = document.createElement("canvas");
@@ -613,12 +611,12 @@
 						}
 					}, "image/png");
 				});
-			} finally {
-				URL.revokeObjectURL(url);
+			} catch (err) {
+				throw err;
 			}
 		}
 
-		function loadImage(url) {
+		function loadImage(svgMarkup) {
 			return new Promise((resolve, reject) => {
 				const img = new Image();
 				img.decoding = "async";
@@ -627,7 +625,7 @@
 					console.error("SVG rasterization failed", event);
 					reject(new Error("Could not load SVG image"));
 				};
-				img.src = url;
+				img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgMarkup);
 			});
 		}
 
